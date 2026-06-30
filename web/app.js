@@ -1,13 +1,13 @@
 const app = document.querySelector("#app");
 
 const state = {
-  app: "toefl",
+  app: "main",
   toeflPage: "home",
   toolPage: null,
-  mascotMood: "smile",
-  plan: getDefaultPlan(),
+  mascotMood: "greet",
+  plan: [],
   completedPlanItems: {},
-  userPlanInput: "60min",
+  userPlanInput: "",
   selectedVocabDeckIndex: null,
   currentWordIndex: 0,
   vocabSentenceDraft: "",
@@ -18,9 +18,19 @@ const state = {
   academicStage: "draft",
   academicProgress: 0,
   academicDraft: getDefaultAcademicDraft(),
+  academicCorrections: {},
+  academicAttempts: {},
+  academicSelectedHighlight: "",
+  academicPanelMessage: "",
+  academicReflectionOpen: false,
+  academicReflectionListening: false,
+  academicReflectionFeedback: false,
+  academicNotesPage: 0,
 };
 
 let academicProgressTimer = null;
+let academicProgressTargetStage = "taskCheck";
+let academicProgressTitle = "Lumi is checking...";
 
 const USE_REAL_API = false;
 const API_ENDPOINTS = {
@@ -105,14 +115,82 @@ function getDefaultAcademicDraft() {
   return "I think camera is very useful and meaningful, because it can help child to develop many abilities and make his life more colorful. When a child use camera, he must look around the world carefully. For example, he may see a flower, a dog, or a old man walking in the street. Before he has camera, maybe he never notice these things. Camera can also make children more creative. If a child only study books every day, he will become boring. But if he has a camera, he can take different pictures, such as sky, food, classmates and his parents. Maybe he can become a famous photographer in the future. Therefore, camera is the best gift for children’s development.";
 }
 
+const academicHighlights = [
+  {
+    id: "word-choice-bored",
+    color: "red",
+    text: "become boring",
+    label: "Issue type: Word choice",
+    questions: [
+      "Do you mean the child makes other people feel bored, or the child feels bored?",
+      "Should you use \"boring\" or \"bored\"?",
+    ],
+    tip: "\"Boring\" describes something that causes boredom. \"Bored\" describes how someone feels.",
+    example: "He may become bored.",
+    accepted: ["become bored", "he may become bored"],
+  },
+  {
+    id: "vague-useful",
+    color: "blue",
+    text: "very useful and meaningful",
+    label: "Upgrade type: Vague explanation",
+    questions: [
+      "Useful for what exactly?",
+      "Does a camera help the child observe, express, remember, or communicate?",
+      "Can you name one specific ability the camera develops?",
+    ],
+    tip: "Try to replace \"useful and meaningful\" with a more specific phrase.",
+    example: "A camera is valuable because it encourages children to observe the world and express their own perspective.",
+    accepted: ["observe", "express", "perspective", "valuable", "camera is valuable"],
+  },
+  {
+    id: "generic-example",
+    color: "blue",
+    text: "he may see a flower, a dog, or an old man walking in the street",
+    label: "Upgrade type: Generic example",
+    questions: [
+      "Are these examples specific enough to show development?",
+      "Can you turn this list into one small scene?",
+      "What does the child learn from noticing this scene?",
+    ],
+    tip: "Choose one example and explain it more deeply.",
+    example: "For example, when a child photographs his grandmother cooking dinner, he may begin to notice her hands, her expression, and the quiet care behind an ordinary meal.",
+    accepted: ["grandmother", "cooking", "notice", "ordinary meal", "scene"],
+  },
+  {
+    id: "weak-conclusion",
+    color: "blue",
+    text: "Therefore, camera is the best gift for children's development.",
+    label: "Upgrade type: Weak conclusion",
+    questions: [
+      "Does this conclusion only repeat your opinion?",
+      "Can you end by explaining what kind of development the camera supports?",
+    ],
+    tip: "A strong final sentence should leave the reader with a clear reason.",
+    example: "For this reason, I would choose a camera because it teaches children not only to record the world, but also to pay closer attention to it.",
+    accepted: ["record the world", "pay closer attention", "choose a camera", "attention"],
+  },
+];
+
+function getDefaultAcademicDraft() {
+  return "I think camera is very useful and meaningful, because it can help child to develop many abilities and make his life more colorful. When a child use camera, he must look around the world carefully. For example, he may see a flower, a dog, or a old man walking in the street. Before he has camera, maybe he never notice these things. Camera can also make children more creative. If a child only study books every day, he will become boring. But if he has a camera, he can take different pictures, such as sky, food, classmates and his parents. Maybe he can become a famous photographer in the future. Therefore, camera is the best gift for children's development.";
+}
+
 function getDefaultPlan() {
   return [
     {
-      title: "20min Academic Discussion",
+      title: "20 min Academic Discussion",
       tag: "Writing",
-      status: "unfinished",
-      action: "Start",
+      status: "continue",
+      action: "Continue",
       route: "academic-discussion",
+    },
+    {
+      title: "20 min Vocabulary",
+      tag: "Vocabulary",
+      status: "continue",
+      action: "Continue",
+      route: "vocab",
     },
     {
       title: "20 min Take an Interview",
@@ -122,11 +200,18 @@ function getDefaultPlan() {
       route: "speaking",
     },
     {
-      title: "20 min Vocabulary",
-      tag: "Vocabulary",
-      status: "continue",
-      action: "Continue",
-      route: "vocab",
+      title: "15 min Listening Review",
+      tag: "Listening",
+      status: "complete",
+      action: "Done",
+      route: "listening",
+    },
+    {
+      title: "15 min Reading Passage",
+      tag: "Reading",
+      status: "complete",
+      action: "Done",
+      route: "reading",
     },
   ];
 }
@@ -337,7 +422,10 @@ function toeflShell() {
           <button class="nav-link ${isActive("forum")}" data-toefl="forum">Community Forum</button>
           <button class="nav-link ${isActive("settings")}" data-toefl="settings">Settings</button>
         </nav>
-        <span class="streak-chip">Streak: ${state.checkInCalendar.weeklyStreak} days</span>
+        <div class="header-metrics">
+          <span class="metric-chip">Target score : 5.5</span>
+          <span class="metric-chip">Streak: ${state.checkInCalendar.weeklyStreak} days</span>
+        </div>
       </header>
       <section class="page">
         ${toeflContent()}
@@ -366,40 +454,38 @@ function homePage() {
   return `
     <div class="dashboard-grid">
       <section class="panel coach-panel">
-        <div class="lumi-stage">
-          <img class="lumi-character ${state.mascotMood}" src="${lumiImage.src}" alt="${lumiImage.alt}" />
+        <div class="coach-visual">
+          <div class="lumi-stage">
+            <img class="lumi-character ${state.mascotMood}" src="${lumiImage.src}" alt="${lumiImage.alt}" />
+          </div>
+          <div class="study-actions">
+            ${[
+              "Listening",
+              "Speaking",
+              "Reading",
+              "Writing",
+            ].map((skill) => `
+              <button class="study-action skill-${skill.toLowerCase()}" data-skill="${skill}">
+                <span class="skill-swatch" aria-hidden="true"></span>
+                <span class="skill-label">${skill}</span>
+              </button>
+            `).join("")}
+          </div>
         </div>
         <div class="coach-copy">
           <p class="eyebrow">TOEFL Home</p>
           <h2>${hasPlan ? "Your plan is ready." : "How long would you like to study today?"}</h2>
           <p>${hasPlan ? "Lumi shaped a short plan from your goal. You can still add extra practice below." : "Tell Lumi your available time and whether you already have a plan."}</p>
-          <form class="plan-form" id="planForm">
-            <input id="planInput" value="${escapeHtml(state.userPlanInput)}" placeholder="Example: 90 minutes, no plan yet" />
-            <button class="primary-btn" type="submit">Plan</button>
-          </form>
+          ${hasPlan ? "" : `
+            <form class="plan-form" id="planForm">
+              <input id="planInput" value="${escapeHtml(state.userPlanInput)}" placeholder="Example: 90 minutes, no plan yet" />
+              <button class="primary-btn" type="submit">Plan</button>
+            </form>
+          `}
           ${hasPlan ? planList() : ""}
-          <div class="study-actions">
-            ${[
-              { skill: "Listening", score: 90 },
-              { skill: "Speaking", score: 65 },
-              { skill: "Reading", score: 91 },
-              { skill: "Writing", score: 86 },
-            ].map((item) => `
-              <button class="study-action" data-skill="${item.skill}">
-                <span class="skill-label">${item.skill}</span>
-                <strong>${item.score}%</strong>
-              </button>
-            `).join("")}
-          </div>
         </div>
       </section>
       <aside class="side-stack">
-        <section class="panel mini-panel">
-          <div class="target-card">
-            <p class="eyebrow">Today</p>
-            <strong>Target score : 5.5</strong>
-          </div>
-        </section>
         <section class="panel mini-panel">
           ${checkInCalendar(checkIns)}
         </section>
@@ -461,11 +547,21 @@ function dayTemplate(day) {
 }
 
 function planList() {
+  const statusOrder = {
+    continue: 0,
+    unfinished: 1,
+    complete: 2,
+  };
+  const planItems = state.plan
+    .map((item, index) => {
+      const status = state.completedPlanItems[index] ? "complete" : item.status;
+      const action = status === "continue" ? "Continue" : status === "complete" ? "Done" : item.action;
+      return { item, index, status, action };
+    })
+    .sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
   return `
     <ul class="plan-list">
-      ${state.plan.map((item, index) => {
-        const status = state.completedPlanItems[index] ? "complete" : item.status;
-        const action = status === "continue" ? "Continue" : status === "complete" ? "Done" : item.action;
+      ${planItems.map(({ item, index, status, action }) => {
         return `
           <li class="plan-item status-${escapeHtml(status)}">
             <button class="plan-task" data-plan-action="${index}" type="button">
@@ -481,16 +577,19 @@ function planList() {
 }
 
 function academicDiscussionPage() {
-  const isErrorFixing = state.academicStage === "errorFixing";
+  const showReviewText = ["errorFixing", "rescore"].includes(state.academicStage);
+  const showNotes = ["takeaways", "doneTakeaways", "completed"].includes(state.academicStage);
+  const showDoneReview = state.academicStage === "doneReview";
   return `
     <div class="academic-wrap">
       <section class="academic-main">
-        ${academicPromptTemplate()}
-        ${isErrorFixing ? academicErrorFixingEditor() : academicDraftEditor()}
+        ${showDoneReview ? academicDoneReviewPanel() : showNotes ? academicTakeawayPanel() : academicPromptTemplate()}
+        ${showDoneReview || showNotes ? "" : showReviewText ? academicErrorFixingEditor() : academicDraftEditor()}
       </section>
 
       ${academicSidePanel()}
     </div>
+    ${state.academicReflectionOpen ? academicReflectionModal() : ""}
   `;
 }
 
@@ -500,7 +599,7 @@ function academicPromptTemplate() {
       <section class="prompt-section">
         <div class="speaker-block">
           <strong>Professor Lee:</strong>
-          <p>In this week’s discussion, we are talking about gifts that can support a child’s development. Some gifts may help children become healthier, more creative, or more responsible. What gift would you give to a child to help them develop? Explain your choice with reasons and examples.</p>
+          <p>In this week's discussion, we are talking about gifts that can support a child's development. Some gifts may help children become healthier, more creative, or more responsible. What gift would you give to a child to help them develop? Explain your choice with reasons and examples.</p>
         </div>
       </section>
 
@@ -534,7 +633,7 @@ function editorToolbarTemplate(showSubmit = false) {
         <button class="editor-btn" type="button">Undo</button>
         <button class="editor-btn" type="button">Redo</button>
       </div>
-      ${showSubmit ? `<button class="editor-submit" id="academicSubmit" type="button">Submit</button>` : ""}
+      ${showSubmit ? `<button class="editor-submit" id="academicSubmit" type="button">Check</button>` : ""}
     </div>
   `;
 }
@@ -553,10 +652,27 @@ function academicErrorFixingEditor() {
     <article class="academic-editor">
       ${editorToolbarTemplate(false)}
       <div class="draft-feedback">
-        <p>
+        <p class="legacy-draft" aria-hidden="true">
           I think <span class="draft-highlight red">camera is very useful and meaningful</span>, because it can help <span class="draft-highlight red">child</span> to develop many abilities and make his life more colorful. When a child <span class="draft-highlight red">use camera</span>, he must look around the world carefully. For example, he may see a flower, a dog, or <span class="draft-highlight red">a old man</span> walking in the street. Before he has camera, maybe he <span class="draft-highlight red">never notice</span> these things. Camera can also make children more creative. If a child only study books every day, <span class="draft-highlight blue">he will become boring</span>. But if he has a camera, he can take different pictures, such as sky, food, classmates and his parents. <span class="draft-highlight blue">Maybe he can become a famous photographer in the future.</span> Therefore, camera is the best gift for children’s development.
         </p>
+        <p>
+          I think camera is ${academicHighlightTemplate("vague-useful")}. It can help child to develop many abilities and make his life more colorful. When a child use camera, he must look around the world carefully. ${academicGenericExampleTemplate()} Before he has camera, maybe he never notice these things. Camera can also make children more creative. If a child only study books every day, he will ${academicHighlightTemplate("word-choice-bored")}. But if he has a camera, he can take different pictures, such as sky, food, classmates and his parents. Maybe he can become a famous photographer in the future. ${academicHighlightTemplate("weak-conclusion")}
+        </p>
       </div>
+    </article>
+  `;
+}
+
+function academicDoneReviewPanel() {
+  return `
+    <article class="academic-editor done-review-card">
+      <div class="draft-feedback">
+        <h2>Revised response</h2>
+        <p>
+          I think camera is ${academicHighlightTemplate("vague-useful")}. It can help child to develop many abilities and make his life more colorful. When a child use camera, he must look around the world carefully. ${academicGenericExampleTemplate()} Before he has camera, maybe he never notice these things. Camera can also make children more creative. If a child only study books every day, he will ${academicHighlightTemplate("word-choice-bored")}. But if he has a camera, he can take different pictures, such as sky, food, classmates and his parents. Maybe he can become a famous photographer in the future. ${academicHighlightTemplate("weak-conclusion")}
+        </p>
+      </div>
+      <button class="primary-btn done-review-btn" id="viewTakeawayNotes" type="button">View takeaway notes</button>
     </article>
   `;
 }
@@ -569,7 +685,7 @@ function academicSidePanel() {
     return `
       <aside class="academic-guide checking-panel">
         <img class="checking-lumi" src="assets/lumi-checking.png" alt="Lumi checking the response" />
-        <h2>Lumi is checking...</h2>
+        <h2>${escapeHtml(academicProgressTitle)}</h2>
         <div class="checking-progress" aria-label="Checking progress">
           <i style="width:${state.academicProgress}%"></i>
         </div>
@@ -577,52 +693,319 @@ function academicSidePanel() {
       </aside>
     `;
   }
+  if (state.academicStage === "errorFixing") {
+    if (isAcademicRevisionComplete()) {
+      return `
+        <aside class="academic-guide revision-panel">
+          ${academicRevisionProgress()}
+          <h2>Revision check</h2>
+          <p>Checking grammar, clarity, word choice, and TOEFL task fit...</p>
+          <div class="rescore-row">
+            <button class="primary-btn" id="academicRescore" type="button">Rescore</button>
+          </div>
+        </aside>
+      `;
+    }
+    const selected = getSelectedAcademicHighlight();
+    return selected ? academicHighlightPanel(selected) : academicHowToPanel();
+  }
+  if (state.academicStage === "rescore") {
+    return `
+      <aside class="academic-guide revision-panel">
+        <h2>Score update</h2>
+        <div class="score-card">
+          <p><strong>Before revision:</strong> <span class="feedback-score">4/6</span></p>
+          <p><strong>After revision:</strong> <span class="feedback-score">5/6</span></p>
+        </div>
+        <div class="rescore-row">
+          <button class="primary-btn" id="openReflectionSummary" type="button">Summary</button>
+        </div>
+      </aside>
+    `;
+  }
+  if (["takeaways", "doneTakeaways", "completed", "doneReview"].includes(state.academicStage)) {
+    return `<aside class="academic-side-empty" aria-hidden="true"></aside>`;
+  }
   if (state.academicStage === "taskCheck") {
     return `
       <aside class="academic-guide task-panel">
-        <h2>Stage 1: Check the Task</h2>
+        <h2>Revision check</h2>
         <p>Before fixing grammar, make sure your response fits the TOEFL Academic Discussion task.</p>
+        <p><strong>Check questions:</strong></p>
         <div class="task-questions">
+          <label><input type="checkbox" /> <span>Did you answer the professor's question?</span></label>
+          <label><input type="checkbox" /> <span>Did you clearly state your own opinion?</span></label>
+          <label><input type="checkbox" /> <span>Did you add something new to Anna and Ben's ideas?</span></label>
+          <label><input type="checkbox" /> <span>Did you support your opinion with a reason or example?</span></label>
+          <label><input type="checkbox" /> <span>Is your response written as a discussion post, not a long essay?</span></label>
+        </div>
+        <button class="primary-btn task-action" id="showLumiFeedback" type="button">View Lumi Feedback</button>
+      </aside>
+    `;
+  }
+  if (state.academicStage === "taskFeedback") {
+    return `
+      <aside class="academic-guide task-panel">
+        <img class="feedback-lumi" src="assets/lumi-thinking.png" alt="Lumi thinking about your response" />
+        <p>Your response answers the professor's question, but it does not clearly connect your idea to Anna or Ben's points. Try to show how your choice is different from a soccer ball or a pet.</p>
+        <button class="primary-btn task-action" id="submitAndScore" type="button">Submit and Score</button>
+      </aside>
+    `;
+  }
+  if (false && state.academicStage === "taskCheck") {
+    return `
+      <aside class="academic-guide task-panel">
+        <h2>Revision check</h2>
+        <p>Before fixing grammar, make sure your response fits the TOEFL Academic Discussion task.</p>
+        <p><strong>Check questions:</strong></p>
+        <ol class="task-questions">
           <label><input type="checkbox" /> <span>Did you answer the professor’s question?</span></label>
           <label><input type="checkbox" /> <span>Did you clearly state your own opinion?</span></label>
           <label><input type="checkbox" /> <span>Did you add something new to Anna and Ben’s ideas?</span></label>
           <label><input type="checkbox" /> <span>Did you support your opinion with a reason or example?</span></label>
           <label><input type="checkbox" /> <span>Is your response written as a discussion post, not a long essay?</span></label>
-        </div>
-        <button class="primary-btn task-action" id="startTaskCheck" type="button">See Lumi Feedbacks</button>
+        </ol>
+        <button class="primary-btn task-action" id="startTaskCheck" type="button">Lumi score</button>
       </aside>
     `;
   }
-  if (state.academicStage === "taskResult") {
+  if (false && state.academicStage === "taskResult") {
     return `
       <aside class="academic-guide task-panel">
         <div class="feedback-summary">
           <img class="feedback-lumi" src="assets/lumi-feedback.png" alt="Lumi giving feedback" />
           <div>
-            <p><strong>Article score according to ETS rubrics:</strong> <span class="feedback-score">3/5</span></p>
-            <p><strong>Reference score:</strong> <span class="feedback-score">3.0/6.0</span></p>
+            <p><strong>Article score according to ETS rubrics:</strong> <span class="feedback-score">4/6</span></p>
+            <p><strong>Reference score:</strong> <span class="feedback-score">4.0/6.0</span></p>
             <p><strong>Main Problems:</strong> Grammar errors, vague examples, weak discussion response</p>
           </div>
         </div>
         <p>Your response answers the professor’s question, but it does not clearly connect your idea to Anna or Ben’s points. Try to show how your choice is different from a soccer ball or a pet.</p>
-        <button class="primary-btn task-action" id="continueErrorFixing" type="button">See More Feedbacks</button>
+        <button class="primary-btn task-action" id="continueErrorFixing" type="button">Continue</button>
       </aside>
     `;
   }
+  return academicHowToPanel();
+}
+
+function academicHighlightTemplate(id) {
+  const item = academicHighlights.find((highlight) => highlight.id === id);
+  if (!item) return "";
+  const correction = state.academicCorrections[id];
+  if (correction) {
+    return `<span class="draft-revised">${escapeHtml(correction)}</span>`;
+  }
+  const isSelected = state.academicSelectedHighlight === id;
+  const needsLook = (state.academicAttempts[id] || 0) > 0;
+  const classes = ["draft-highlight", item.color];
+  if (isSelected) classes.push("selected");
+  if (needsLook) classes.push("yellow");
+  return `<button class="${classes.join(" ")}" data-academic-highlight="${id}" type="button">${escapeHtml(item.text)}</button>`;
+}
+
+function academicGenericExampleTemplate() {
+  const correction = state.academicCorrections["generic-example"];
+  if (correction) {
+    return `<span class="draft-revised">${escapeHtml(correction)}</span>`;
+  }
+  return `For example, ${academicHighlightTemplate("generic-example")}.`;
+}
+
+function academicScoreBadge(score) {
   return `
-    <aside class="academic-guide">
-      <h2>How to Use This Page</h2>
-      <p>Red highlights show sentence-level problems that may make your writing unclear.</p>
-      <p>Blue highlights show places where your ideas can become stronger.</p>
+    <div class="revision-score-badge">
+      <span>Score</span>
+      <strong>${escapeHtml(score)}</strong>
+    </div>
+  `;
+}
+
+function academicHowToPanel() {
+  return `
+    <aside class="academic-guide revision-panel">
+      ${academicScoreBadge("4/6")}
+      ${academicRevisionProgress()}
+      <h2>How to use this page</h2>
       <p>Click a highlighted part to receive Socratic questions, revise your sentence, and save your improvement.</p>
       <div class="legend-list" aria-label="Highlight color legend">
         <span><i class="legend-swatch red"></i>Red = Fix the error</span>
         <span><i class="legend-swatch blue"></i>Blue = Upgrade the idea</span>
-        <span><i class="legend-swatch green"></i>Green = Revised successfully</span>
         <span><i class="legend-swatch yellow"></i>Yellow = Needs another look</span>
       </div>
     </aside>
   `;
+}
+
+function academicHighlightPanel(item) {
+  const attempts = state.academicAttempts[item.id] || 0;
+  const prompt = state.academicPanelMessage || item.questions[0];
+  const showAnswer = attempts >= item.questions.length;
+  return `
+    <aside class="academic-guide revision-panel">
+      ${academicScoreBadge("4/6")}
+      ${academicRevisionProgress()}
+      <button class="secondary-btn guide-back-btn" id="showAcademicHowTo" type="button">How to use this page</button>
+      <h2>${escapeHtml(item.label)}</h2>
+      <div class="selected-quote">${escapeHtml(item.text)}</div>
+      <div class="socratic-box">
+        <strong>${showAnswer ? "Suggested answer" : `Socratic question ${Math.min(attempts + 1, item.questions.length)}`}</strong>
+        <p>${escapeHtml(showAnswer ? item.example : prompt)}</p>
+      </div>
+      ${showAnswer ? `
+        <div class="hint-box">
+          <strong>Tip</strong>
+          <p>${escapeHtml(item.tip)}</p>
+        </div>
+        <div class="example-box">
+          <strong>Example</strong>
+          <p>${escapeHtml(item.example)}</p>
+        </div>
+      ` : ""}
+      <form class="replace-form" id="academicReplaceForm">
+        <textarea id="academicReplacementInput" rows="4" placeholder="Type your revision"></textarea>
+        <button class="primary-btn" type="submit">Replace</button>
+      </form>
+    </aside>
+  `;
+}
+
+function academicRevisionProgress() {
+  const done = Object.keys(state.academicCorrections).length;
+  const percent = Math.round((done / academicHighlights.length) * 100);
+  return `
+    <div class="revision-progress">
+      <div class="revision-progress-meta">
+        <span>Revision progress</span>
+        <strong>${done}/${academicHighlights.length}</strong>
+      </div>
+      <div class="checking-progress" aria-label="Revision progress">
+        <i style="width:${percent}%"></i>
+      </div>
+    </div>
+  `;
+}
+
+function academicReflectionModal() {
+  const isFeedback = state.academicReflectionFeedback;
+  const isListening = state.academicReflectionListening;
+  const lumiImage = isFeedback ? "assets/lumi-feedback.png" : isListening ? "assets/lumi-listening.png" : "assets/lumi-inspired.png";
+  const lumiAlt = isListening ? "Lumi listening to your reflection" : isFeedback ? "Lumi saving your reflection" : "Lumi asking a reflection question";
+  return `
+    <div class="modal-scrim">
+      <section class="reflection-modal" role="dialog" aria-modal="true" aria-labelledby="reflectionTitle">
+        <img class="feedback-lumi ${isFeedback ? "feedback-pop" : ""}" src="${lumiImage}" alt="${lumiAlt}" />
+        <h2 id="reflectionTitle">${isFeedback ? "Lumi saved your reflection." : isListening ? "Lumi is listening..." : "What did you learn today?"}</h2>
+        <p>${isFeedback ? "Now let's turn it into takeaway notes." : isListening ? "Say one thing you can reuse in your next TOEFL response." : "Tell Lumi one revision idea you want to remember."}</p>
+        ${isFeedback ? "" : `
+          <div class="reflection-actions">
+            <button class="mic-btn ${isListening ? "listening" : ""}" id="reflectionMic" type="button" aria-label="${isListening ? "Stop speaking" : "Start speaking"}">
+              <span class="mic-wave wave-one" aria-hidden="true"></span>
+              <span class="mic-wave wave-two" aria-hidden="true"></span>
+              <span class="mic-icon" aria-hidden="true"></span>
+            </button>
+            <button class="secondary-btn" id="reflectionSkip" type="button">Skip</button>
+          </div>
+        `}
+      </section>
+    </div>
+  `;
+}
+
+function academicTakeawayPanel() {
+  if (state.academicStage === "completed") {
+    return `
+      <article class="academic-editor takeaway-card completion-card">
+        <h2>Today's writing task completed</h2>
+        <p>You revised the highlighted parts.</p>
+        <p>Your score improved from 4/6 to 5/6.</p>
+        <p>You learned 10 Advanced Word Bank items and 5 reusable writing tools.</p>
+        <div class="encouragement">
+          <p>You did not just correct this response.</p>
+          <p>You learned how to revise one.</p>
+        </div>
+        <button class="primary-btn" id="backHomeFromWriting" type="button">Back to Home</button>
+      </article>
+    `;
+  }
+  const page = state.academicNotesPage;
+  return `
+    <article class="academic-editor takeaway-card">
+      <div class="takeaway-head">
+        <div>
+          <p class="eyebrow">Revision summary</p>
+          <h2>Takeaway notes</h2>
+        </div>
+        <div class="takeaway-arrows">
+          <button class="page-icon-btn" id="takeawayPrev" type="button" aria-label="Previous page" ${page === 0 ? "disabled" : ""}>
+            <span class="arrow-icon prev" aria-hidden="true"></span>
+          </button>
+          <button class="page-icon-btn" id="takeawayNext" type="button" aria-label="Next page" ${page === 1 ? "disabled" : ""}>
+            <span class="arrow-icon next" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+      ${page === 0 ? advancedWordBank() : reusableSentencePatterns()}
+      ${page === 1 && state.academicStage === "takeaways" ? `<button class="primary-btn complete-writing-btn" id="completeWritingTask" type="button">Complete</button>` : ""}
+      ${page === 1 && state.academicStage === "doneTakeaways" ? `<button class="primary-btn complete-writing-btn" id="backHomeFromWriting" type="button">Back to Home</button>` : ""}
+    </article>
+  `;
+}
+
+function advancedWordBank() {
+  const rows = [
+    ["good", "beneficial / valuable"],
+    ["useful", "practical / helpful"],
+    ["very useful", "highly practical"],
+    ["important", "essential / significant"],
+    ["help", "encourage / support / allow"],
+    ["make children creative", "foster creativity"],
+    ["make children careful", "develop attention to detail"],
+    ["remember good time", "preserve meaningful memories"],
+    ["make life colorful", "enrich a child's daily life"],
+    ["become better", "grow more confident / become more independent"],
+  ];
+  return `
+    <section class="takeaway-section">
+      <h3>Advanced word bank</h3>
+      <table class="word-bank-table">
+        <tbody>
+          ${rows.map(([plain, advanced]) => `<tr><td>${escapeHtml(plain)}</td><td>${escapeHtml(advanced)}</td></tr>`).join("")}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function reusableSentencePatterns() {
+  const patterns = [
+    ["What makes ___ valuable is not ___, but ___.", "What makes a camera valuable is not the photos themselves, but the habit of attention it builds."],
+    ["Unlike ___, which mainly develops ___, ___ can help children ___.", "Unlike a soccer ball, which mainly develops physical fitness and teamwork, a camera can help children observe and express themselves."],
+    ["Even if a child never becomes ___, he or she can still learn to ___.", "Even if a child never becomes a photographer, he or she can still learn to notice details and express ideas visually."],
+    ["This is important because development is not only about ___, but also about ___.", "This is important because development is not only about gaining knowledge, but also about learning how to pay attention."],
+    ["Instead of simply ___, ___ encourages children to ___.", "Instead of simply entertaining children, a camera encourages them to slow down and notice the world around them."],
+  ];
+  return `
+    <section class="takeaway-section">
+      <h3>Sentence patterns you can reuse</h3>
+      <div class="pattern-list">
+        ${patterns.map(([pattern, example], index) => `
+          <div class="pattern-item">
+            <strong>Pattern ${index + 1}</strong>
+            <p>${escapeHtml(pattern)}</p>
+            <span>${escapeHtml(example)}</span>
+          </div>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function getSelectedAcademicHighlight() {
+  return academicHighlights.find((highlight) => highlight.id === state.academicSelectedHighlight);
+}
+
+function isAcademicRevisionComplete() {
+  return academicHighlights.every((highlight) => state.academicCorrections[highlight.id]);
 }
 
 function graphPage() {
@@ -905,6 +1288,7 @@ function vocabDeckRow(deck, index) {
 function vocabPracticePage() {
   const current = studyWords[state.currentWordIndex % studyWords.length];
   const deck = vocabDecks[state.selectedVocabDeckIndex] || vocabDecks[0];
+  const wordLengthClass = getVocabularyWordLengthClass(current.word);
   return `
     <section class="panel content-card vocab-practice">
       <div class="vocab-practice-head">
@@ -917,7 +1301,7 @@ function vocabPracticePage() {
       </div>
       <div class="vocab-practice-grid">
         <aside class="study-word">
-          <strong>${current.word}</strong>
+          <strong class="vocab-word ${wordLengthClass}">${formatVocabularyWord(current.word)}</strong>
           <span>${current.meaning}</span>
           <div class="word-scene" style="background-position:${current.imagePosition};" aria-label="Illustration for ${escapeHtml(current.word)}"></div>
           <button class="primary-btn" id="nextWord">Next Word</button>
@@ -934,6 +1318,31 @@ function vocabPracticePage() {
       </div>
     </section>
   `;
+}
+
+function getVocabularyWordLengthClass(word) {
+  if (word.length > 16) return "very-long";
+  if (word.length > 11) return "long";
+  return "normal";
+}
+
+function formatVocabularyWord(word) {
+  if (word.length <= 16) return escapeHtml(word);
+  const midpoint = Math.ceil(word.length / 2);
+  let splitAt = midpoint;
+  for (let offset = 0; offset < 4; offset += 1) {
+    const left = midpoint - offset;
+    const right = midpoint + offset;
+    if (/[aeiouy]/i.test(word[left] || "")) {
+      splitAt = left + 1;
+      break;
+    }
+    if (/[aeiouy]/i.test(word[right] || "")) {
+      splitAt = right + 1;
+      break;
+    }
+  }
+  return `${escapeHtml(word.slice(0, splitAt))}-<br>${escapeHtml(word.slice(splitAt))}`;
 }
 
 function speakingPage() {
@@ -1114,13 +1523,23 @@ function bindEvents() {
       }
       if (item.route === "academic-discussion") {
         clearAcademicProgressTimer();
+        const itemStatus = state.completedPlanItems[Number(el.dataset.planAction)] ? "complete" : item.status;
+        const isDone = itemStatus === "complete";
         setState({
           app: "toefl",
           toeflPage: "academicDiscussion",
           toolPage: null,
-          academicStage: "draft",
+          academicStage: isDone ? "doneReview" : "draft",
           academicProgress: 0,
           academicDraft: getDefaultAcademicDraft(),
+          academicCorrections: isDone ? getCompletedAcademicCorrections() : {},
+          academicAttempts: {},
+          academicSelectedHighlight: "",
+          academicPanelMessage: "",
+          academicReflectionOpen: false,
+          academicReflectionListening: false,
+          academicReflectionFeedback: false,
+          academicNotesPage: 0,
         });
       }
     });
@@ -1131,9 +1550,126 @@ function bindEvents() {
     academicSubmit.addEventListener("click", handleAcademicSubmit);
   }
 
-  const startTaskCheck = document.querySelector("#startTaskCheck");
-  if (startTaskCheck) {
-    startTaskCheck.addEventListener("click", () => setState({ academicStage: "taskResult" }));
+  document.querySelectorAll("[data-academic-highlight]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const item = academicHighlights.find((highlight) => highlight.id === el.dataset.academicHighlight);
+      setState({
+        academicSelectedHighlight: el.dataset.academicHighlight,
+        academicPanelMessage: item ? item.questions[Math.min(state.academicAttempts[item.id] || 0, item.questions.length - 1)] : "",
+      });
+      focusAcademicReplacementInput();
+    });
+  });
+
+  const academicReplaceForm = document.querySelector("#academicReplaceForm");
+  if (academicReplaceForm) {
+    academicReplaceForm.addEventListener("submit", handleAcademicReplace);
+  }
+
+  const academicReplacementInput = document.querySelector("#academicReplacementInput");
+  if (academicReplacementInput) {
+    academicReplacementInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.shiftKey) return;
+      event.preventDefault();
+      const form = document.querySelector("#academicReplaceForm");
+      if (form) form.requestSubmit();
+    });
+  }
+
+  const showAcademicHowTo = document.querySelector("#showAcademicHowTo");
+  if (showAcademicHowTo) {
+    showAcademicHowTo.addEventListener("click", () => {
+      setState({ academicSelectedHighlight: "", academicPanelMessage: "" });
+    });
+  }
+
+  const academicRescore = document.querySelector("#academicRescore");
+  if (academicRescore) {
+    academicRescore.addEventListener("click", () => {
+      startAcademicProgress("rescore", "Lumi is scoring", {
+        academicReflectionOpen: false,
+        academicReflectionListening: false,
+        academicReflectionFeedback: false,
+      });
+    });
+  }
+
+  const openReflectionSummary = document.querySelector("#openReflectionSummary");
+  if (openReflectionSummary) {
+    openReflectionSummary.addEventListener("click", () => {
+      setState({ academicReflectionOpen: true, academicReflectionListening: false, academicReflectionFeedback: false });
+    });
+  }
+
+  const reflectionMic = document.querySelector("#reflectionMic");
+  if (reflectionMic) {
+    reflectionMic.addEventListener("click", () => {
+      if (state.academicReflectionListening) {
+        setState({ academicReflectionListening: false, academicReflectionFeedback: true });
+        window.setTimeout(() => {
+          setState({
+            academicStage: "takeaways",
+            academicReflectionOpen: false,
+            academicReflectionListening: false,
+            academicReflectionFeedback: false,
+            academicNotesPage: 0,
+          });
+        }, 1700);
+        return;
+      }
+      setState({ academicReflectionListening: true, academicReflectionFeedback: false });
+    });
+  }
+
+  const reflectionSkip = document.querySelector("#reflectionSkip");
+  if (reflectionSkip) {
+    reflectionSkip.addEventListener("click", () => {
+      setState({ academicStage: "takeaways", academicReflectionOpen: false, academicReflectionListening: false, academicReflectionFeedback: false, academicNotesPage: 0 });
+    });
+  }
+
+  const takeawayPrev = document.querySelector("#takeawayPrev");
+  if (takeawayPrev) {
+    takeawayPrev.addEventListener("click", () => setState({ academicNotesPage: Math.max(0, state.academicNotesPage - 1) }));
+  }
+
+  const takeawayNext = document.querySelector("#takeawayNext");
+  if (takeawayNext) {
+    takeawayNext.addEventListener("click", () => setState({ academicNotesPage: Math.min(1, state.academicNotesPage + 1) }));
+  }
+
+  const completeWritingTask = document.querySelector("#completeWritingTask");
+  if (completeWritingTask) {
+    completeWritingTask.addEventListener("click", () => setState({ academicStage: "completed" }));
+  }
+
+  const viewTakeawayNotes = document.querySelector("#viewTakeawayNotes");
+  if (viewTakeawayNotes) {
+    viewTakeawayNotes.addEventListener("click", () => setState({ academicStage: "doneTakeaways", academicNotesPage: 0 }));
+  }
+
+  const backHomeFromWriting = document.querySelector("#backHomeFromWriting");
+  if (backHomeFromWriting) {
+    backHomeFromWriting.addEventListener("click", () => {
+      setState({
+        app: "toefl",
+        toeflPage: "home",
+        toolPage: null,
+        plan: state.plan.map((item) => item.route === "academic-discussion"
+          ? { ...item, status: "complete", action: "Done" }
+          : item),
+      });
+    });
+  }
+
+  const showLumiFeedback = document.querySelector("#showLumiFeedback");
+  if (showLumiFeedback) {
+    showLumiFeedback.addEventListener("click", () => setState({ academicStage: "taskFeedback" }));
+  }
+
+  const submitAndScore = document.querySelector("#submitAndScore");
+  if (submitAndScore) {
+    submitAndScore.addEventListener("click", () => startAcademicProgress("errorFixing", "Lumi is scoring"));
   }
 
   const continueErrorFixing = document.querySelector("#continueErrorFixing");
@@ -1165,21 +1701,112 @@ function clearAcademicProgressTimer() {
 function handleAcademicSubmit() {
   const draftInput = document.querySelector("#academicDraftInput");
   const draft = draftInput ? draftInput.value.trim() : state.academicDraft;
+  startAcademicProgress("taskCheck", "Lumi is checking...", {
+    academicDraft: draft || getDefaultAcademicDraft(),
+    academicCorrections: {},
+    academicAttempts: {},
+    academicSelectedHighlight: "",
+    academicPanelMessage: "",
+    academicReflectionOpen: false,
+    academicReflectionListening: false,
+    academicReflectionFeedback: false,
+    academicNotesPage: 0,
+  });
+}
+
+function startAcademicProgress(targetStage, title = "Lumi is checking...", updates = {}) {
   clearAcademicProgressTimer();
+  academicProgressTargetStage = targetStage;
+  academicProgressTitle = title;
   setState({
+    ...updates,
     academicStage: "loading",
     academicProgress: 0,
-    academicDraft: draft || getDefaultAcademicDraft(),
   });
   academicProgressTimer = window.setInterval(() => {
-    const nextProgress = Math.min(state.academicProgress + 10, 100);
+    const nextProgress = Math.min(state.academicProgress + 20, 100);
     if (nextProgress >= 100) {
       clearAcademicProgressTimer();
-      setState({ academicProgress: 100, academicStage: "taskCheck" });
+      setState({ academicProgress: 100, academicStage: academicProgressTargetStage });
       return;
     }
     setState({ academicProgress: nextProgress });
-  }, 1000);
+  }, 260);
+}
+
+function handleAcademicReplace(event) {
+  event.preventDefault();
+  const item = getSelectedAcademicHighlight();
+  const input = document.querySelector("#academicReplacementInput");
+  const value = input ? input.value.trim() : "";
+  if (!item || !value) return;
+  if (isAcademicRevisionAccepted(item, value)) {
+    const corrections = { ...state.academicCorrections, [item.id]: getAcademicStoredRevision(item, value) };
+    const nextItem = academicHighlights.find((highlight) => !corrections[highlight.id]);
+    setState({
+      academicCorrections: corrections,
+      academicSelectedHighlight: nextItem ? nextItem.id : "",
+      academicPanelMessage: nextItem ? nextItem.questions[0] : "",
+    });
+    if (nextItem) focusAcademicReplacementInput();
+    return;
+  }
+  const attempts = { ...state.academicAttempts, [item.id]: (state.academicAttempts[item.id] || 0) + 1 };
+  const nextAttempt = attempts[item.id];
+  const nextMessage = item.questions[nextAttempt] || item.example;
+  setState({
+    academicAttempts: attempts,
+    academicPanelMessage: nextMessage,
+  });
+  focusAcademicReplacementInput();
+}
+
+function focusAcademicReplacementInput() {
+  window.setTimeout(() => {
+    const input = document.querySelector("#academicReplacementInput");
+    if (!input) return;
+    input.focus();
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
+  }, 0);
+}
+
+function getCompletedAcademicCorrections() {
+  return academicHighlights.reduce((corrections, item) => {
+    corrections[item.id] = getAcademicStoredRevision(item, item.example);
+    return corrections;
+  }, {});
+}
+
+function isAcademicRevisionAccepted(item, value) {
+  const normalized = normalizeRevision(value);
+  if (normalized === normalizeRevision(item.example)) return true;
+  return item.accepted.some((phrase) => normalized.includes(normalizeRevision(phrase)));
+}
+
+function getAcademicStoredRevision(item, value) {
+  const trimmed = value.trim();
+  if (item.id === "word-choice-bored") {
+    return "become bored";
+  }
+  if (item.id === "vague-useful") {
+    const source = trimmed.length < 25 ? item.example : trimmed;
+    return source
+      .replace(/^(a\s+)?camera is\s+/i, "")
+      .replace(/\.$/, "");
+  }
+  if (trimmed.length < 30 && item.id !== "word-choice-bored") {
+    return item.example;
+  }
+  return trimmed;
+}
+
+function normalizeRevision(value) {
+  return value
+    .toLowerCase()
+    .replace(/["'.?!,;:]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function transitionGraphUpdate(update, selectedEl) {
@@ -1190,7 +1817,7 @@ function transitionGraphUpdate(update, selectedEl) {
   }
   if (selectedEl) selectedEl.classList.add("selected");
   board.classList.add("focus-out");
-  window.setTimeout(update, 260);
+  window.setTimeout(update, 1040);
 }
 
 async function handleSpeakingSubmit(event) {
