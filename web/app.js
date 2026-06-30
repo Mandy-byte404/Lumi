@@ -1,13 +1,13 @@
 const app = document.querySelector("#app");
 
 const state = {
-  app: "main",
+  app: "toefl",
   toeflPage: "home",
   toolPage: null,
-  mascotMood: "greet",
-  plan: [],
+  mascotMood: "smile",
+  plan: getDefaultPlan(),
   completedPlanItems: {},
-  userPlanInput: "",
+  userPlanInput: "60min",
   selectedVocabDeckIndex: null,
   currentWordIndex: 0,
   vocabSentenceDraft: "",
@@ -15,7 +15,12 @@ const state = {
   checkInCalendar: getPresetCheckInCalendar(),
   graphSkill: "",
   graphPath: [],
+  academicStage: "draft",
+  academicProgress: 0,
+  academicDraft: getDefaultAcademicDraft(),
 };
+
+let academicProgressTimer = null;
 
 const USE_REAL_API = false;
 const API_ENDPOINTS = {
@@ -53,13 +58,7 @@ const mockApi = {
       return postJson(API_ENDPOINTS.dailyPlan, { message: input });
     }
     await wait(850);
-    return [
-      { title: "30 minutes of speaking drills", tag: "Speaking" },
-      { title: "20 minutes of academic reading", tag: "Reading" },
-      { title: "15 minutes of listening shadowing", tag: "Listening" },
-      { title: "20 minutes of independent writing practice", tag: "Writing" },
-      { title: "10 minutes of vocabulary sentence work", tag: "Words" },
-    ];
+    return getDefaultPlan();
   },
   async lumiReply(message) {
     if (USE_REAL_API) {
@@ -101,6 +100,36 @@ const mockApi = {
 };
 
 const vocabDecks = getPresetVocabDecks();
+
+function getDefaultAcademicDraft() {
+  return "I think camera is very useful and meaningful, because it can help child to develop many abilities and make his life more colorful. When a child use camera, he must look around the world carefully. For example, he may see a flower, a dog, or a old man walking in the street. Before he has camera, maybe he never notice these things. Camera can also make children more creative. If a child only study books every day, he will become boring. But if he has a camera, he can take different pictures, such as sky, food, classmates and his parents. Maybe he can become a famous photographer in the future. Therefore, camera is the best gift for children’s development.";
+}
+
+function getDefaultPlan() {
+  return [
+    {
+      title: "20min Academic Discussion",
+      tag: "Writing",
+      status: "unfinished",
+      action: "Start",
+      route: "academic-discussion",
+    },
+    {
+      title: "20 min Take an Interview",
+      tag: "Speaking",
+      status: "unfinished",
+      action: "Start",
+      route: "speaking",
+    },
+    {
+      title: "20 min Vocabulary",
+      tag: "Vocabulary",
+      status: "continue",
+      action: "Continue",
+      route: "vocab",
+    },
+  ];
+}
 
 function getPresetVocabDecks() {
   return [
@@ -322,6 +351,7 @@ function isActive(page) {
 }
 
 function toeflContent() {
+  if (state.toeflPage === "academicDiscussion") return academicDiscussionPage();
   if (state.toeflPage === "graph") return graphPage();
   if (state.toeflPage === "forum") return blankPage("Community Forum");
   if (state.toeflPage === "settings") return blankPage("Settings");
@@ -349,18 +379,29 @@ function homePage() {
           </form>
           ${hasPlan ? planList() : ""}
           <div class="study-actions">
-            ${["Listening", "Speaking", "Reading", "Writing"].map((item) => `<button class="study-action" data-skill="${item}"><span></span>${item}</button>`).join("")}
+            ${[
+              { skill: "Listening", score: 90 },
+              { skill: "Speaking", score: 65 },
+              { skill: "Reading", score: 91 },
+              { skill: "Writing", score: 86 },
+            ].map((item) => `
+              <button class="study-action" data-skill="${item.skill}">
+                <span class="skill-label">${item.skill}</span>
+                <strong>${item.score}%</strong>
+              </button>
+            `).join("")}
           </div>
         </div>
       </section>
       <aside class="side-stack">
         <section class="panel mini-panel">
-          ${checkInCalendar(checkIns)}
+          <div class="target-card">
+            <p class="eyebrow">Today</p>
+            <strong>Target score : 5.5</strong>
+          </div>
         </section>
         <section class="panel mini-panel">
-          <p class="eyebrow">Today</p>
-          <p>Target score: 105</p>
-          <p>Next milestone: finish one speaking response and review two reading mistakes.</p>
+          ${checkInCalendar(checkIns)}
         </section>
       </aside>
     </div>
@@ -423,18 +464,164 @@ function planList() {
   return `
     <ul class="plan-list">
       ${state.plan.map((item, index) => {
-        const done = Boolean(state.completedPlanItems[index]);
+        const status = state.completedPlanItems[index] ? "complete" : item.status;
+        const action = status === "continue" ? "Continue" : status === "complete" ? "Done" : item.action;
         return `
-          <li class="${done ? "is-complete" : ""}">
-            <label class="plan-check">
-              <input type="checkbox" data-plan-check="${index}" ${done ? "checked" : ""} />
-              <span>${escapeHtml(item.title)}</span>
-            </label>
-            <span class="tag">${escapeHtml(item.tag)}</span>
+          <li class="plan-item status-${escapeHtml(status)}">
+            <button class="plan-task" data-plan-action="${index}" type="button">
+              <span class="plan-action">${escapeHtml(action)}</span>
+              <span class="plan-title">${escapeHtml(item.title)}</span>
+            </button>
+            <span class="tag status-tag">${escapeHtml(item.tag)}</span>
           </li>
         `;
       }).join("")}
     </ul>
+  `;
+}
+
+function academicDiscussionPage() {
+  const isErrorFixing = state.academicStage === "errorFixing";
+  return `
+    <div class="academic-wrap">
+      <section class="academic-main">
+        ${academicPromptTemplate()}
+        ${isErrorFixing ? academicErrorFixingEditor() : academicDraftEditor()}
+      </section>
+
+      ${academicSidePanel()}
+    </div>
+  `;
+}
+
+function academicPromptTemplate() {
+  return `
+    <article class="academic-prompt">
+      <section class="prompt-section">
+        <div class="speaker-block">
+          <strong>Professor Lee:</strong>
+          <p>In this week’s discussion, we are talking about gifts that can support a child’s development. Some gifts may help children become healthier, more creative, or more responsible. What gift would you give to a child to help them develop? Explain your choice with reasons and examples.</p>
+        </div>
+      </section>
+
+      <section class="prompt-section">
+        <div class="response-grid">
+          <div class="speaker-block">
+            <strong>Anna:</strong>
+            <p>I would give a child a soccer ball because it encourages exercise and teamwork. When children play sports with others, they learn how to cooperate, follow rules, and stay healthy.</p>
+          </div>
+          <div class="speaker-block">
+            <strong>Ben:</strong>
+            <p>I would give a child a pet. Taking care of an animal can teach responsibility because the child has to feed it, clean it, and pay attention to another living thing.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="prompt-section">
+        <h2>Your Response</h2>
+        <p>Write your own contribution to the discussion. You should express your opinion, support it with reasons, and add something new to the discussion.</p>
+      </section>
+    </article>
+  `;
+}
+
+function editorToolbarTemplate(showSubmit = false) {
+  return `
+    <div class="editor-toolbar" aria-label="Draft editing toolbar">
+      <div class="editor-tools">
+        <button class="editor-btn active" type="button">Cut</button>
+        <button class="editor-btn" type="button">Paste</button>
+        <button class="editor-btn" type="button">Undo</button>
+        <button class="editor-btn" type="button">Redo</button>
+      </div>
+      ${showSubmit ? `<button class="editor-submit" id="academicSubmit" type="button">Submit</button>` : ""}
+    </div>
+  `;
+}
+
+function academicDraftEditor() {
+  return `
+    <article class="academic-editor">
+      ${editorToolbarTemplate(true)}
+      <textarea class="draft-textarea" id="academicDraftInput" aria-label="Your discussion response">${escapeHtml(state.academicDraft)}</textarea>
+    </article>
+  `;
+}
+
+function academicErrorFixingEditor() {
+  return `
+    <article class="academic-editor">
+      ${editorToolbarTemplate(false)}
+      <div class="draft-feedback">
+        <p>
+          I think <span class="draft-highlight red">camera is very useful and meaningful</span>, because it can help <span class="draft-highlight red">child</span> to develop many abilities and make his life more colorful. When a child <span class="draft-highlight red">use camera</span>, he must look around the world carefully. For example, he may see a flower, a dog, or <span class="draft-highlight red">a old man</span> walking in the street. Before he has camera, maybe he <span class="draft-highlight red">never notice</span> these things. Camera can also make children more creative. If a child only study books every day, <span class="draft-highlight blue">he will become boring</span>. But if he has a camera, he can take different pictures, such as sky, food, classmates and his parents. <span class="draft-highlight blue">Maybe he can become a famous photographer in the future.</span> Therefore, camera is the best gift for children’s development.
+        </p>
+      </div>
+    </article>
+  `;
+}
+
+function academicSidePanel() {
+  if (state.academicStage === "draft") {
+    return `<aside class="academic-side-empty" aria-hidden="true"></aside>`;
+  }
+  if (state.academicStage === "loading") {
+    return `
+      <aside class="academic-guide checking-panel">
+        <img class="checking-lumi" src="assets/lumi-checking.png" alt="Lumi checking the response" />
+        <h2>Lumi is checking...</h2>
+        <div class="checking-progress" aria-label="Checking progress">
+          <i style="width:${state.academicProgress}%"></i>
+        </div>
+        <strong>${state.academicProgress}%</strong>
+      </aside>
+    `;
+  }
+  if (state.academicStage === "taskCheck") {
+    return `
+      <aside class="academic-guide task-panel">
+        <h2>Stage 1: Check the Task</h2>
+        <p>Before fixing grammar, make sure your response fits the TOEFL Academic Discussion task.</p>
+        <div class="task-questions">
+          <label><input type="checkbox" /> <span>Did you answer the professor’s question?</span></label>
+          <label><input type="checkbox" /> <span>Did you clearly state your own opinion?</span></label>
+          <label><input type="checkbox" /> <span>Did you add something new to Anna and Ben’s ideas?</span></label>
+          <label><input type="checkbox" /> <span>Did you support your opinion with a reason or example?</span></label>
+          <label><input type="checkbox" /> <span>Is your response written as a discussion post, not a long essay?</span></label>
+        </div>
+        <button class="primary-btn task-action" id="startTaskCheck" type="button">See Lumi Feedbacks</button>
+      </aside>
+    `;
+  }
+  if (state.academicStage === "taskResult") {
+    return `
+      <aside class="academic-guide task-panel">
+        <div class="feedback-summary">
+          <img class="feedback-lumi" src="assets/lumi-feedback.png" alt="Lumi giving feedback" />
+          <div>
+            <p><strong>Article score according to ETS rubrics:</strong> <span class="feedback-score">3/5</span></p>
+            <p><strong>Reference score:</strong> <span class="feedback-score">3.0/6.0</span></p>
+            <p><strong>Main Problems:</strong> Grammar errors, vague examples, weak discussion response</p>
+          </div>
+        </div>
+        <p>Your response answers the professor’s question, but it does not clearly connect your idea to Anna or Ben’s points. Try to show how your choice is different from a soccer ball or a pet.</p>
+        <button class="primary-btn task-action" id="continueErrorFixing" type="button">See More Feedbacks</button>
+      </aside>
+    `;
+  }
+  return `
+    <aside class="academic-guide">
+      <h2>How to Use This Page</h2>
+      <p>Red highlights show sentence-level problems that may make your writing unclear.</p>
+      <p>Blue highlights show places where your ideas can become stronger.</p>
+      <p>Click a highlighted part to receive Socratic questions, revise your sentence, and save your improvement.</p>
+      <div class="legend-list" aria-label="Highlight color legend">
+        <span><i class="legend-swatch red"></i>Red = Fix the error</span>
+        <span><i class="legend-swatch blue"></i>Blue = Upgrade the idea</span>
+        <span><i class="legend-swatch green"></i>Green = Revised successfully</span>
+        <span><i class="legend-swatch yellow"></i>Yellow = Needs another look</span>
+      </div>
+    </aside>
   `;
 }
 
@@ -906,16 +1093,53 @@ function bindEvents() {
     speakingForm.addEventListener("submit", handleSpeakingSubmit);
   }
 
-  document.querySelectorAll("[data-plan-check]").forEach((el) => {
-    el.addEventListener("change", () => {
-      setState({
-        completedPlanItems: {
-          ...state.completedPlanItems,
-          [el.dataset.planCheck]: el.checked,
-        },
-      });
+  document.querySelectorAll("[data-plan-action]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const item = state.plan[Number(el.dataset.planAction)];
+      if (!item) return;
+      if (item.route === "speaking") {
+        goToefl("tool", "speaking");
+        return;
+      }
+      if (item.route === "vocab") {
+        setState({
+          app: "toefl",
+          toeflPage: "tool",
+          toolPage: "vocab",
+          selectedVocabDeckIndex: null,
+          vocabSentenceDraft: "",
+          vocabSentenceMessages: [],
+        });
+        return;
+      }
+      if (item.route === "academic-discussion") {
+        clearAcademicProgressTimer();
+        setState({
+          app: "toefl",
+          toeflPage: "academicDiscussion",
+          toolPage: null,
+          academicStage: "draft",
+          academicProgress: 0,
+          academicDraft: getDefaultAcademicDraft(),
+        });
+      }
     });
   });
+
+  const academicSubmit = document.querySelector("#academicSubmit");
+  if (academicSubmit) {
+    academicSubmit.addEventListener("click", handleAcademicSubmit);
+  }
+
+  const startTaskCheck = document.querySelector("#startTaskCheck");
+  if (startTaskCheck) {
+    startTaskCheck.addEventListener("click", () => setState({ academicStage: "taskResult" }));
+  }
+
+  const continueErrorFixing = document.querySelector("#continueErrorFixing");
+  if (continueErrorFixing) {
+    continueErrorFixing.addEventListener("click", () => setState({ academicStage: "errorFixing" }));
+  }
 
   const vocabSentenceForm = document.querySelector("#vocabSentenceForm");
   if (vocabSentenceForm) {
@@ -929,6 +1153,33 @@ async function handlePlanSubmit(event) {
   setState({ mascotMood: "thinking", userPlanInput: input });
   const plan = await mockApi.buildDailyPlan(input);
   setState({ mascotMood: "smile", plan, completedPlanItems: {} });
+}
+
+function clearAcademicProgressTimer() {
+  if (academicProgressTimer) {
+    window.clearInterval(academicProgressTimer);
+    academicProgressTimer = null;
+  }
+}
+
+function handleAcademicSubmit() {
+  const draftInput = document.querySelector("#academicDraftInput");
+  const draft = draftInput ? draftInput.value.trim() : state.academicDraft;
+  clearAcademicProgressTimer();
+  setState({
+    academicStage: "loading",
+    academicProgress: 0,
+    academicDraft: draft || getDefaultAcademicDraft(),
+  });
+  academicProgressTimer = window.setInterval(() => {
+    const nextProgress = Math.min(state.academicProgress + 10, 100);
+    if (nextProgress >= 100) {
+      clearAcademicProgressTimer();
+      setState({ academicProgress: 100, academicStage: "taskCheck" });
+      return;
+    }
+    setState({ academicProgress: nextProgress });
+  }, 1000);
 }
 
 function transitionGraphUpdate(update, selectedEl) {
