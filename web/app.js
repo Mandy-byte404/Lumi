@@ -580,11 +580,12 @@ function academicDiscussionPage() {
   const showReviewText = ["errorFixing", "rescore"].includes(state.academicStage);
   const showNotes = ["takeaways", "doneTakeaways", "completed"].includes(state.academicStage);
   const showDoneReview = state.academicStage === "doneReview";
+  const showLoading = state.academicStage === "loading";
   return `
     <div class="academic-wrap">
       <section class="academic-main">
         ${showDoneReview ? academicDoneReviewPanel() : showNotes ? academicTakeawayPanel() : academicPromptTemplate()}
-        ${showDoneReview || showNotes ? "" : showReviewText ? academicErrorFixingEditor() : academicDraftEditor()}
+        ${showDoneReview || showNotes || showLoading ? "" : showReviewText ? academicErrorFixingEditor() : academicDraftEditor()}
       </section>
 
       ${academicSidePanel()}
@@ -855,10 +856,6 @@ function academicHighlightPanel(item) {
         <div class="hint-box">
           <strong>Tip</strong>
           <p>${escapeHtml(item.tip)}</p>
-        </div>
-        <div class="example-box">
-          <strong>Example</strong>
-          <p>${escapeHtml(item.example)}</p>
         </div>
       ` : ""}
       <form class="replace-form" id="academicReplaceForm">
