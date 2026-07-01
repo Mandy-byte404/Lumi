@@ -1094,6 +1094,67 @@ button {
   font-weight: 800;
 }
 
+.community-upload-avatar {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  z-index: 45;
+  display: grid;
+  width: 74px;
+  height: 74px;
+  place-items: center;
+  padding: 6px;
+  border: 1px solid rgba(24, 55, 47, 0.14);
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(24, 55, 47, 0.22);
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.community-upload-avatar:hover,
+.community-upload-avatar:focus-visible {
+  transform: translateY(-3px);
+  box-shadow: 0 24px 52px rgba(24, 55, 47, 0.28);
+}
+
+.community-upload-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: contain;
+}
+
+.community-upload-avatar::after {
+  content: attr(title);
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 12px);
+  width: max-content;
+  max-width: min(320px, calc(100vw - 40px));
+  padding: 9px 12px;
+  border: 1px solid #dce7e5;
+  border-radius: 8px;
+  background: #18372f;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 850;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+
+.community-upload-avatar:hover::after,
+.community-upload-avatar:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .task-questions {
   display: grid;
   gap: 10px;
@@ -1885,6 +1946,130 @@ button {
   background: rgba(255, 255, 255, 0.58);
 }
 
+.forum-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 240px);
+  gap: 22px;
+  max-width: 1180px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+.forum-main {
+  min-height: 520px;
+  border: 1px dashed #cfdcde;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.forum-tags {
+  position: sticky;
+  top: 86px;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(221, 229, 233, 0.86);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 34px rgba(35, 50, 61, 0.08);
+}
+
+.forum-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #dce7e5;
+  border-radius: 8px;
+  background: #fff;
+  color: #263640;
+  text-align: left;
+  font-weight: 900;
+}
+
+.forum-post {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.forum-post-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.forum-post h1 {
+  margin: 0;
+  color: #17202a;
+  font-size: clamp(1.35rem, 2.2vw, 2rem);
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.forum-post-body {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid #e1e7e8;
+  border-radius: 8px;
+  background: #fff;
+  color: #263640;
+  line-height: 1.72;
+}
+
+.comment-section {
+  display: grid;
+  gap: 14px;
+  padding-top: 2px;
+}
+
+.comment-list {
+  display: grid;
+  gap: 10px;
+}
+
+.comment-item {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid #e1e7e8;
+  border-radius: 8px;
+  background: #fbfdfb;
+}
+
+.comment-item strong {
+  color: #18372f;
+}
+
+.comment-item p {
+  margin: 0;
+  color: #31404d;
+  line-height: 1.48;
+}
+
+.comment-form {
+  display: grid;
+  gap: 10px;
+}
+
+.comment-form textarea {
+  width: 100%;
+  min-height: 94px;
+  padding: 12px 14px;
+  border: 1px solid #ccd9dd;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.comment-form .primary-btn {
+  justify-self: start;
+}
+
 .tool-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(280px, 0.55fr);
@@ -2148,13 +2333,15 @@ button {
 
   .dashboard-grid,
   .academic-wrap,
+  .forum-wrap,
   .coach-panel,
   .tool-grid,
   .vocab-practice-grid {
     grid-template-columns: 1fr;
   }
 
-  .academic-guide {
+  .academic-guide,
+  .forum-tags {
     position: static;
   }
 
@@ -2205,12 +2392,36 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .forum-main {
+    min-height: 420px;
+  }
+
   .hero-copy {
     margin-left: 22px;
   }
 }
 
 @media (max-width: 520px) {
+  .community-upload-avatar {
+    right: 18px;
+    bottom: 18px;
+    width: 62px;
+    height: 62px;
+  }
+
+  .community-upload-avatar::after {
+    right: -2px;
+    max-width: calc(100vw - 36px);
+  }
+
+  .forum-post {
+    padding: 16px;
+  }
+
+  .forum-post-head {
+    flex-direction: column;
+  }
+
   .study-actions {
     grid-template-columns: 1fr;
   }

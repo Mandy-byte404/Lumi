@@ -26,6 +26,9 @@ const state = {
   academicReflectionListening: false,
   academicReflectionFeedback: false,
   academicNotesPage: 0,
+  forumPost: null,
+  forumComments: [],
+  forumReturnPage: null,
 };
 
 let academicProgressTimer = null;
@@ -110,6 +113,8 @@ const mockApi = {
 };
 
 const vocabDecks = getPresetVocabDecks();
+
+const communityPostTitle = "I think Lumi scored me too low. Please help me review this";
 
 function getDefaultAcademicDraft() {
   return "I think camera is very useful and meaningful, because it can help child to develop many abilities and make his life more colorful. When a child use camera, he must look around the world carefully. For example, he may see a flower, a dog, or a old man walking in the street. Before he has camera, maybe he never notice these things. Camera can also make children more creative. If a child only study books every day, he will become boring. But if he has a camera, he can take different pictures, such as sky, food, classmates and his parents. Maybe he can become a famous photographer in the future. Therefore, camera is the best gift for children’s development.";
@@ -441,7 +446,7 @@ function isActive(page) {
 function toeflContent() {
   if (state.toeflPage === "academicDiscussion") return academicDiscussionPage();
   if (state.toeflPage === "graph") return graphPage();
-  if (state.toeflPage === "forum") return blankPage("Community Forum");
+  if (state.toeflPage === "forum") return forumPage();
   if (state.toeflPage === "settings") return blankPage("Settings");
   if (state.toeflPage === "tool") return toolPage();
   return homePage();
@@ -590,7 +595,21 @@ function academicDiscussionPage() {
 
       ${academicSidePanel()}
     </div>
+    ${academicCommunityUploadButton()}
     ${state.academicReflectionOpen ? academicReflectionModal() : ""}
+  `;
+}
+
+function academicCommunityUploadButton() {
+  const showDuringScoredFlow = ["errorFixing", "rescore"].includes(state.academicStage)
+    || (state.academicStage === "loading" && academicProgressTargetStage === "rescore");
+  if (!showDuringScoredFlow || state.academicReflectionOpen) {
+    return "";
+  }
+  return `
+    <button class="community-upload-avatar" id="communityUploadAvatar" type="button" aria-label="Upload to community" title="Not satisfied with Lumi's score? Upload to community">
+      <img src="assets/Icon-tight.png" alt="" />
+    </button>
   `;
 }
 
@@ -1195,6 +1214,54 @@ function blankPage(title) {
   `;
 }
 
+function forumPage() {
+  return `
+    <div class="forum-wrap">
+      <section class="forum-main">
+        ${state.forumPost ? forumPostTemplate() : ""}
+      </section>
+      <aside class="forum-tags" aria-label="Forum tags">
+        ${skillOptions.map((skill) => `
+          <button class="forum-tag skill-${skill.id}" type="button">
+            <span class="skill-swatch" aria-hidden="true"></span>
+            <span>${escapeHtml(skill.label)}</span>
+          </button>
+        `).join("")}
+      </aside>
+    </div>
+  `;
+}
+
+function forumPostTemplate() {
+  const comments = state.forumComments;
+  return `
+    <article class="forum-post">
+      <div class="forum-post-head">
+        <div>
+          <p class="eyebrow">Writing</p>
+          <h1>${escapeHtml(state.forumPost.title)}</h1>
+        </div>
+        ${state.forumReturnPage ? `<button class="secondary-btn" id="forumReturnWriting" type="button">Back</button>` : ""}
+      </div>
+      <p class="forum-post-body">${escapeHtml(state.forumPost.body)}</p>
+      <section class="comment-section" aria-label="Comments">
+        <div class="comment-list">
+          ${comments.map((comment) => `
+            <div class="comment-item">
+              <strong>${escapeHtml(comment.author)}</strong>
+              <p>${escapeHtml(comment.text)}</p>
+            </div>
+          `).join("")}
+        </div>
+        <form class="comment-form" id="communityCommentForm">
+          <textarea id="communityCommentInput" rows="4" placeholder="Write a comment"></textarea>
+          <button class="primary-btn" type="submit">Post</button>
+        </form>
+      </section>
+    </article>
+  `;
+}
+
 function toolPage() {
   const page = state.toolPage || "problems";
   const titles = {
@@ -1547,6 +1614,11 @@ function bindEvents() {
     academicSubmit.addEventListener("click", handleAcademicSubmit);
   }
 
+  const communityUploadAvatar = document.querySelector("#communityUploadAvatar");
+  if (communityUploadAvatar) {
+    communityUploadAvatar.addEventListener("click", publishAcademicPostToForum);
+  }
+
   document.querySelectorAll("[data-academic-highlight]").forEach((el) => {
     el.addEventListener("click", () => {
       const item = academicHighlights.find((highlight) => highlight.id === el.dataset.academicHighlight);
@@ -1640,6 +1712,18 @@ function bindEvents() {
     completeWritingTask.addEventListener("click", () => setState({ academicStage: "completed" }));
   }
 
+  const forumReturnWriting = document.querySelector("#forumReturnWriting");
+  if (forumReturnWriting) {
+    forumReturnWriting.addEventListener("click", () => {
+      setState({ app: "toefl", toeflPage: "academicDiscussion", toolPage: null, forumReturnPage: null });
+    });
+  }
+
+  const communityCommentForm = document.querySelector("#communityCommentForm");
+  if (communityCommentForm) {
+    communityCommentForm.addEventListener("submit", handleCommunityCommentSubmit);
+  }
+
   const viewTakeawayNotes = document.querySelector("#viewTakeawayNotes");
   if (viewTakeawayNotes) {
     viewTakeawayNotes.addEventListener("click", () => setState({ academicStage: "doneTakeaways", academicNotesPage: 0 }));
@@ -1708,6 +1792,33 @@ function handleAcademicSubmit() {
     academicReflectionListening: false,
     academicReflectionFeedback: false,
     academicNotesPage: 0,
+  });
+}
+
+function publishAcademicPostToForum() {
+  setState({
+    app: "toefl",
+    toeflPage: "forum",
+    toolPage: null,
+    forumReturnPage: "academicDiscussion",
+    forumPost: {
+      title: communityPostTitle,
+      body: getDefaultAcademicDraft(),
+    },
+    forumComments: [],
+  });
+}
+
+function handleCommunityCommentSubmit(event) {
+  event.preventDefault();
+  const input = document.querySelector("#communityCommentInput");
+  const text = input ? input.value.trim() : "";
+  if (!text) return;
+  setState({
+    forumComments: [
+      ...state.forumComments,
+      { author: "You", text },
+    ],
   });
 }
 
