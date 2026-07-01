@@ -236,6 +236,18 @@ const studyWords = [
   { word: "substantiate", meaning: "to support with evidence", imagePosition: "right center" },
 ];
 
+const resilientDialogueReplies = [
+  'You wrote "I am resilient girl." Let me ask first: is "girl" a countable noun or an uncountable noun?',
+  "Good. When a countable noun is singular, what does it usually need before it?",
+  'Right. So the sentence should be "I am a resilient girl." Now let me ask another question. In TOEFL writing, if you only say "I am a resilient girl," can this sentence fully show your opinion and reason?',
+  "Good. What kind of situation is the word resilient usually connected with? Is it about ordinary happy moments, or about difficulties, failure, and pressure?",
+  "Right. Can you add a reason to explain why you are resilient? For example, what difficulty do you face, and what can you still do?",
+  'This is much better. Now let us make it sound more like TOEFL writing. TOEFL essays usually do not emphasize "girl" or "boy." They more often use person, student, or individual. Which one do you think fits better?',
+  "Good. We can revise it as: I consider myself a resilient student because I do not give up easily when I face academic challenges.",
+  'Now I will keep asking you one TOEFL writing question. If the essay topic is "Do you agree or disagree that failure is important for success?" Can you use resilient to write one supporting sentence?',
+  "Good. This way, you have not only memorized resilient as able to recover from difficulty. You have learned how to use it in TOEFL writing: resilient + difficulties / challenges / failure / setbacks / recover / goals.",
+];
+
 function getVocabularyExample(word) {
   const examples = {
     resilient: "The resilient student recovered from a low quiz score by changing her study routine and asking better questions.",
@@ -1372,7 +1384,7 @@ function vocabPracticePage() {
         </aside>
         <div class="sentence-coach">
           <div class="chat-box sentence-chat" id="vocabSentenceChat">
-            ${state.vocabSentenceMessages.map((message) => `<div class="bubble ${message.role}">${escapeHtml(message.text).replaceAll("\n", "<br>")}</div>`).join("")}
+            ${state.vocabSentenceMessages.map((message) => `<div class="bubble ${message.role}">${formatChatMessage(message.text)}</div>`).join("")}
           </div>
           <form class="sentence-form" id="vocabSentenceForm">
             <textarea id="vocabSentenceInput" rows="5" placeholder="Write one sentence with ${escapeHtml(current.word)}">${escapeHtml(state.vocabSentenceDraft)}</textarea>
@@ -1407,6 +1419,15 @@ function formatVocabularyWord(word) {
     }
   }
   return `${escapeHtml(word.slice(0, splitAt))}-<br>${escapeHtml(word.slice(splitAt))}`;
+}
+
+function getInitialVocabSentenceMessages(word) {
+  return [];
+}
+
+function getNextResilientReply(messages) {
+  const replyIndex = messages.filter((message) => message.role === "lumi").length;
+  return resilientDialogueReplies[replyIndex] || "";
 }
 
 function speakingPage() {
@@ -1532,11 +1553,15 @@ function bindEvents() {
 
   const nextWord = document.querySelector("#nextWord");
   if (nextWord) {
-    nextWord.addEventListener("click", () => setState({
-      currentWordIndex: state.currentWordIndex + 1,
-      vocabSentenceDraft: "",
-      vocabSentenceMessages: [],
-    }));
+    nextWord.addEventListener("click", () => {
+      const nextIndex = state.currentWordIndex + 1;
+      const nextWordItem = studyWords[nextIndex % studyWords.length];
+      setState({
+        currentWordIndex: nextIndex,
+        vocabSentenceDraft: "",
+        vocabSentenceMessages: getInitialVocabSentenceMessages(nextWordItem.word),
+      });
+    });
   }
 
   document.querySelectorAll("[data-vocab-deck]").forEach((el) => {
@@ -1545,7 +1570,7 @@ function bindEvents() {
         selectedVocabDeckIndex: Number(el.dataset.vocabDeck),
         currentWordIndex: 0,
         vocabSentenceDraft: "",
-        vocabSentenceMessages: [],
+        vocabSentenceMessages: getInitialVocabSentenceMessages(studyWords[0].word),
       });
     });
   });
@@ -1762,6 +1787,16 @@ function bindEvents() {
   if (vocabSentenceForm) {
     vocabSentenceForm.addEventListener("submit", handleVocabSentenceSubmit);
   }
+
+  const vocabSentenceInput = document.querySelector("#vocabSentenceInput");
+  if (vocabSentenceInput) {
+    vocabSentenceInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.shiftKey) return;
+      event.preventDefault();
+      const form = document.querySelector("#vocabSentenceForm");
+      if (form) form.requestSubmit();
+    });
+  }
 }
 
 async function handlePlanSubmit(event) {
@@ -1943,10 +1978,16 @@ async function handleSpeakingSubmit(event) {
 async function handleVocabSentenceSubmit(event) {
   event.preventDefault();
   const input = document.querySelector("#vocabSentenceInput");
-  const sentence = input.value.trim();
+  const sentence = normalizeChatInput(input.value);
   if (!sentence) return;
   const current = studyWords[state.currentWordIndex % studyWords.length];
   const messages = [...state.vocabSentenceMessages, { role: "user", text: sentence }];
+  if (current.word === "resilient") {
+    const reply = getNextResilientReply(state.vocabSentenceMessages);
+    const nextMessages = reply ? [...messages, { role: "lumi", text: reply }] : messages;
+    setState({ vocabSentenceDraft: "", vocabSentenceMessages: nextMessages });
+    return;
+  }
   setState({ vocabSentenceDraft: "", vocabSentenceMessages: messages });
   const reply = await mockApi.reviewVocabularySentence(current.word, current.meaning, sentence);
   setState({ vocabSentenceMessages: [...messages, { role: "lumi", text: reply }] });
@@ -1959,6 +2000,16 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function normalizeChatInput(value) {
+  return String(value)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatChatMessage(value) {
+  return escapeHtml(String(value).trim().replace(/\n{2,}/g, "\n")).replaceAll("\n", "<br>");
 }
 
 render();
