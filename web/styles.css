@@ -420,6 +420,13 @@ button {
   color: var(--ink);
 }
 
+.plan-error {
+  margin: -8px 0 10px;
+  color: #9d3d36;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
 .plan-list {
   display: grid;
   gap: 10px;
@@ -2460,4 +2467,171 @@ button {
   .lumi-stage {
     height: 248px;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SAGE Vocabulary Coaching — Typing Indicator
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.typing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 18px !important;
+  min-height: 40px;
+}
+
+.typing-indicator span {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8fb8a8;
+  animation: typingDot 1.4s ease-in-out infinite;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typingDot {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SAGE Vocabulary Coaching — Score Panel
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.vocab-score-panel {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #d9e5de;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f8fcf9, #f2f8f5);
+}
+
+.vocab-score-overall {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 8px 0 14px;
+}
+
+.vocab-score-overall strong {
+  font-size: 2rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.vocab-score-overall span {
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.score-pass strong {
+  color: #18745d;
+}
+
+.score-pass span {
+  color: #2e9b78;
+}
+
+.score-needs-work strong {
+  color: #b8691e;
+}
+
+.score-needs-work span {
+  color: #d48820;
+}
+
+.vocab-score-bars {
+  display: grid;
+  gap: 8px;
+}
+
+.score-bar-row {
+  display: grid;
+  grid-template-columns: 64px 1fr 32px;
+  align-items: center;
+  gap: 10px;
+}
+
+.score-bar-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #687281;
+}
+
+.score-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2ebe6;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s ease;
+}
+
+.score-bar-value {
+  font-size: 0.72rem;
+  font-weight: 900;
+  color: #31404d;
+  text-align: right;
+}
+
+.score-feedback {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #31404d;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SAGE Vocabulary Coaching — Score Request Button
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.sage-score-btn {
+  margin-top: 10px;
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #c8d6cf;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f5faf7, #eef5f2);
+  color: #18745d;
+  font-weight: 800;
+  font-size: 0.82rem;
+  transition: all 0.2s ease;
+}
+
+.sage-score-btn:hover {
+  border-color: #8fb8a8;
+  background: linear-gradient(135deg, #eef6f1, #e6f0ec);
+  box-shadow: 0 4px 12px rgba(24, 116, 93, 0.12);
+}
+
+/* Disabled states during loading */
+.sentence-form button:disabled,
+.sentence-form textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

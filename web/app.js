@@ -6,12 +6,16 @@ const state = {
   toolPage: null,
   mascotMood: "greet",
   plan: [],
+  planLoading: false,
+  planError: "",
   completedPlanItems: {},
   userPlanInput: "",
   selectedVocabDeckIndex: null,
   currentWordIndex: 0,
   vocabSentenceDraft: "",
   vocabSentenceMessages: [],
+  vocabLoading: false,
+  vocabScore: null,
   checkInCalendar: getPresetCheckInCalendar(),
   graphSkill: "",
   graphPath: [],
@@ -35,13 +39,15 @@ let academicProgressTimer = null;
 let academicProgressTargetStage = "taskCheck";
 let academicProgressTitle = "Lumi is checking...";
 
-const USE_REAL_API = false;
+const USE_REAL_API = true;
 const API_ENDPOINTS = {
   dailyPlan: "/api/lumi/daily-plan",
   speakingCoach: "/api/lumi/speaking-coach",
   vocabDeckProgress: "/api/lumi/vocab-deck-progress",
   vocabSentenceCoach: "/api/lumi/vocab-sentence-coach",
   checkInCalendar: "/api/lumi/check-ins",
+  sageVocabChat: "/api/sage/vocab-chat",
+  sageVocabScore: "/api/sage/vocab-score",
 };
 
 const lumiImages = {
@@ -68,10 +74,14 @@ const mockApi = {
   },
   async buildDailyPlan(input) {
     if (USE_REAL_API) {
-      return postJson(API_ENDPOINTS.dailyPlan, { message: input });
+      const data = await postJson(API_ENDPOINTS.dailyPlan, {
+        message: input,
+        currentPlan: state.plan,
+      });
+      return normalizeDailyPlan(data.plan || data);
     }
     await wait(850);
-    return getDefaultPlan();
+    return normalizeDailyPlan(getDefaultPlan());
   },
   async lumiReply(message) {
     if (USE_REAL_API) {
@@ -219,6 +229,56 @@ function getDefaultPlan() {
       route: "reading",
     },
   ];
+}
+
+function normalizeDailyPlan(plan) {
+  const fallback = getDefaultPlan();
+  const source = Array.isArray(plan) && plan.length ? plan : fallback;
+  return source.slice(0, 6).map((item, index) => {
+    const route = normalizePlanRoute(item.route || item.tool || item.target);
+    const tag = String(item.tag || routeLabel(route));
+    const status = ["continue", "unfinished", "complete"].includes(item.status) ? item.status : "unfinished";
+    const action = String(item.action || (status === "complete" ? "Done" : status === "continue" ? "Continue" : "Start"));
+    return {
+      title: String(item.title || `${routeLabel(route)} practice ${index + 1}`),
+      tag,
+      status,
+      action,
+      route,
+    };
+  });
+}
+
+function normalizePlanRoute(route) {
+  const value = String(route || "").toLowerCase().replaceAll("_", "-").trim();
+  const aliases = {
+    writing: "academic-discussion",
+    academic: "academic-discussion",
+    "academic-discussion": "academic-discussion",
+    vocabulary: "vocab",
+    vocab: "vocab",
+    speaking: "speaking",
+    listening: "listening",
+    reading: "reading",
+    problems: "problems",
+    practice: "problems",
+    mock: "mock",
+    "mock-exam": "mock",
+  };
+  return aliases[value] || "problems";
+}
+
+function routeLabel(route) {
+  const labels = {
+    "academic-discussion": "Writing",
+    vocab: "Vocabulary",
+    speaking: "Speaking",
+    listening: "Listening",
+    reading: "Reading",
+    problems: "Practice",
+    mock: "Mock",
+  };
+  return labels[route] || "Practice";
 }
 
 function getPresetVocabDecks() {
@@ -492,13 +552,12 @@ function homePage() {
         <div class="coach-copy">
           <p class="eyebrow">TOEFL Home</p>
           <h2>${hasPlan ? "Your plan is ready." : "How long would you like to study today?"}</h2>
-          <p>${hasPlan ? "Lumi shaped a short plan from your goal. You can still add extra practice below." : "Tell Lumi your available time and whether you already have a plan."}</p>
-          ${hasPlan ? "" : `
-            <form class="plan-form" id="planForm">
-              <input id="planInput" value="${escapeHtml(state.userPlanInput)}" placeholder="Example: 90 minutes, no plan yet" />
-              <button class="primary-btn" type="submit">Plan</button>
-            </form>
-          `}
+          <p>${hasPlan ? "Lumi shaped a short plan from your goal and today's TOEFL tools." : "Tell Lumi your available time and whether you already have a plan."}</p>
+          <form class="plan-form" id="planForm">
+            <input id="planInput" value="${escapeHtml(state.userPlanInput)}" placeholder="Example: 90 minutes, no plan yet" ${state.planLoading ? "disabled" : ""} />
+            <button class="primary-btn" type="submit" ${state.planLoading ? "disabled" : ""}>${state.planLoading ? "Planning..." : hasPlan ? "Replan" : "Plan"}</button>
+          </form>
+          ${state.planError ? `<p class="plan-error">${escapeHtml(state.planError)}</p>` : ""}
           ${hasPlan ? planList() : ""}
         </div>
       </section>
@@ -1365,6 +1424,7 @@ function vocabPracticePage() {
   const current = studyWords[state.currentWordIndex % studyWords.length];
   const deck = vocabDecks[state.selectedVocabDeckIndex] || vocabDecks[0];
   const wordLengthClass = getVocabularyWordLengthClass(current.word);
+  const scoreHtml = state.vocabScore ? vocabScorePanel(state.vocabScore) : "";
   return `
     <section class="panel content-card vocab-practice">
       <div class="vocab-practice-head">
@@ -1381,18 +1441,52 @@ function vocabPracticePage() {
           <span>${current.meaning}</span>
           <div class="word-scene" style="background-position:${current.imagePosition};" aria-label="Illustration for ${escapeHtml(current.word)}"></div>
           <button class="primary-btn" id="nextWord">Next Word</button>
+          ${scoreHtml}
         </aside>
         <div class="sentence-coach">
           <div class="chat-box sentence-chat" id="vocabSentenceChat">
             ${state.vocabSentenceMessages.map((message) => `<div class="bubble ${message.role}">${formatChatMessage(message.text)}</div>`).join("")}
+            ${state.vocabLoading ? '<div class="bubble lumi typing-indicator"><span></span><span></span><span></span></div>' : ""}
           </div>
           <form class="sentence-form" id="vocabSentenceForm">
-            <textarea id="vocabSentenceInput" rows="5" placeholder="Write one sentence with ${escapeHtml(current.word)}">${escapeHtml(state.vocabSentenceDraft)}</textarea>
-            <button class="primary-btn" type="submit">Check</button>
+            <textarea id="vocabSentenceInput" rows="5" placeholder="Write one sentence with ${escapeHtml(current.word)}"${state.vocabLoading ? " disabled" : ""}>${escapeHtml(state.vocabSentenceDraft)}</textarea>
+            <button class="primary-btn" type="submit"${state.vocabLoading ? " disabled" : ""}>Check</button>
           </form>
+          ${state.vocabLoading ? '' : '<button class="secondary-btn sage-score-btn" id="vocabRequestScore" type="button">Score My Sentence</button>'}
         </div>
       </div>
     </section>
+  `;
+}
+
+function vocabScorePanel(score) {
+  if (!score) return "";
+  const pct = (v) => Math.round((v || 0) * 100);
+  const barColor = (v) => v >= 0.7 ? "#2e9b78" : v >= 0.5 ? "#e6a817" : "#d45050";
+  const dimensions = [
+    { label: "Grammar", value: score.grammar_correctness },
+    { label: "Usage", value: score.word_usage_accuracy },
+    { label: "Context", value: score.context_richness },
+    { label: "TOEFL", value: score.toefl_readiness },
+  ];
+  return `
+    <div class="vocab-score-panel">
+      <p class="eyebrow">Sentence Score</p>
+      <div class="vocab-score-overall ${score.is_acceptable ? 'score-pass' : 'score-needs-work'}">
+        <strong>${pct(score.overall_score)}%</strong>
+        <span>${score.is_acceptable ? "Acceptable" : "Needs Work"}</span>
+      </div>
+      <div class="vocab-score-bars">
+        ${dimensions.map((d) => `
+          <div class="score-bar-row">
+            <span class="score-bar-label">${d.label}</span>
+            <div class="score-bar-track"><div class="score-bar-fill" style="width:${pct(d.value)}%;background:${barColor(d.value)}"></div></div>
+            <span class="score-bar-value">${pct(d.value)}</span>
+          </div>
+        `).join("")}
+      </div>
+      ${score.feedback_summary ? `<p class="score-feedback">${escapeHtml(score.feedback_summary)}</p>` : ""}
+    </div>
   `;
 }
 
@@ -1422,7 +1516,12 @@ function formatVocabularyWord(word) {
 }
 
 function getInitialVocabSentenceMessages(word) {
-  return [];
+  return [
+    {
+      role: "lumi",
+      text: `Let's practice with the word "${word}"! Try writing a sentence using it. I'll guide you step by step to make your sentence stronger — like a TOEFL coach. Don't worry about being perfect; just give it your best try!`,
+    },
+  ];
 }
 
 function getNextResilientReply(messages) {
@@ -1560,6 +1659,8 @@ function bindEvents() {
         currentWordIndex: nextIndex,
         vocabSentenceDraft: "",
         vocabSentenceMessages: getInitialVocabSentenceMessages(nextWordItem.word),
+        vocabScore: null,
+        vocabLoading: false,
       });
     });
   }
@@ -1595,42 +1696,7 @@ function bindEvents() {
     el.addEventListener("click", () => {
       const item = state.plan[Number(el.dataset.planAction)];
       if (!item) return;
-      if (item.route === "speaking") {
-        goToefl("tool", "speaking");
-        return;
-      }
-      if (item.route === "vocab") {
-        setState({
-          app: "toefl",
-          toeflPage: "tool",
-          toolPage: "vocab",
-          selectedVocabDeckIndex: null,
-          vocabSentenceDraft: "",
-          vocabSentenceMessages: [],
-        });
-        return;
-      }
-      if (item.route === "academic-discussion") {
-        clearAcademicProgressTimer();
-        const itemStatus = state.completedPlanItems[Number(el.dataset.planAction)] ? "complete" : item.status;
-        const isDone = itemStatus === "complete";
-        setState({
-          app: "toefl",
-          toeflPage: "academicDiscussion",
-          toolPage: null,
-          academicStage: isDone ? "doneReview" : "draft",
-          academicProgress: 0,
-          academicDraft: getDefaultAcademicDraft(),
-          academicCorrections: isDone ? getCompletedAcademicCorrections() : {},
-          academicAttempts: {},
-          academicSelectedHighlight: "",
-          academicPanelMessage: "",
-          academicReflectionOpen: false,
-          academicReflectionListening: false,
-          academicReflectionFeedback: false,
-          academicNotesPage: 0,
-        });
-      }
+      openPlanItem(item, Number(el.dataset.planAction));
     });
   });
 
@@ -1797,14 +1863,77 @@ function bindEvents() {
       if (form) form.requestSubmit();
     });
   }
+
+  const vocabRequestScore = document.querySelector("#vocabRequestScore");
+  if (vocabRequestScore) {
+    vocabRequestScore.addEventListener("click", handleVocabScoreRequest);
+  }
 }
 
 async function handlePlanSubmit(event) {
   event.preventDefault();
   const input = document.querySelector("#planInput").value.trim();
-  setState({ mascotMood: "thinking", userPlanInput: input });
-  const plan = await mockApi.buildDailyPlan(input);
-  setState({ mascotMood: "smile", plan, completedPlanItems: {} });
+  setState({ mascotMood: "thinking", userPlanInput: input, planLoading: true, planError: "" });
+  try {
+    const plan = await mockApi.buildDailyPlan(input);
+    setState({ mascotMood: "smile", plan, completedPlanItems: {}, planLoading: false, planError: "" });
+  } catch (err) {
+    console.warn("Daily plan API unavailable:", err.message);
+    setState({
+      mascotMood: "smile",
+      plan: normalizeDailyPlan(getDefaultPlan()),
+      completedPlanItems: {},
+      planLoading: false,
+      planError: "AI planning is temporarily unavailable, so Lumi prepared a local TOEFL plan.",
+    });
+  }
+}
+
+function openPlanItem(item, index) {
+  const route = normalizePlanRoute(item.route);
+  if (route === "academic-discussion") {
+    clearAcademicProgressTimer();
+    const itemStatus = state.completedPlanItems[index] ? "complete" : item.status;
+    const isDone = itemStatus === "complete";
+    setState({
+      app: "toefl",
+      toeflPage: "academicDiscussion",
+      toolPage: null,
+      academicStage: isDone ? "doneReview" : "draft",
+      academicProgress: 0,
+      academicDraft: getDefaultAcademicDraft(),
+      academicCorrections: isDone ? getCompletedAcademicCorrections() : {},
+      academicAttempts: {},
+      academicSelectedHighlight: "",
+      academicPanelMessage: "",
+      academicReflectionOpen: false,
+      academicReflectionListening: false,
+      academicReflectionFeedback: false,
+      academicNotesPage: 0,
+    });
+    return;
+  }
+  if (route === "vocab") {
+    setState({
+      app: "toefl",
+      toeflPage: "tool",
+      toolPage: "vocab",
+      selectedVocabDeckIndex: null,
+      vocabSentenceDraft: "",
+      vocabSentenceMessages: [],
+      vocabScore: null,
+      vocabLoading: false,
+    });
+    return;
+  }
+  const toolRoutes = {
+    speaking: "speaking",
+    listening: "listening",
+    reading: "problems",
+    problems: "problems",
+    mock: "mock",
+  };
+  goToefl("tool", toolRoutes[route] || "problems");
 }
 
 function clearAcademicProgressTimer() {
@@ -1979,18 +2108,74 @@ async function handleVocabSentenceSubmit(event) {
   event.preventDefault();
   const input = document.querySelector("#vocabSentenceInput");
   const sentence = normalizeChatInput(input.value);
-  if (!sentence) return;
+  if (!sentence || state.vocabLoading) return;
   const current = studyWords[state.currentWordIndex % studyWords.length];
   const messages = [...state.vocabSentenceMessages, { role: "user", text: sentence }];
-  if (current.word === "resilient") {
-    const reply = getNextResilientReply(state.vocabSentenceMessages);
-    const nextMessages = reply ? [...messages, { role: "lumi", text: reply }] : messages;
-    setState({ vocabSentenceDraft: "", vocabSentenceMessages: nextMessages });
-    return;
+
+  // Show user message + loading indicator
+  setState({ vocabSentenceDraft: "", vocabSentenceMessages: messages, vocabLoading: true });
+
+  try {
+    // Call SAGE backend (Guidance → Execution pipeline)
+    const response = await fetch(API_ENDPOINTS.sageVocabChat, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        word: current.word,
+        meaning: current.meaning,
+        sentence,
+        history: messages,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const reply = data.reply || data.error || "Let me think about that...";
+    setState({
+      vocabSentenceMessages: [...messages, { role: "lumi", text: reply }],
+      vocabLoading: false,
+    });
+  } catch (err) {
+    console.warn("SAGE API unavailable, using fallback:", err.message);
+    // Fallback to mock when server is unreachable
+    const reply = await mockApi.reviewVocabularySentence(current.word, current.meaning, sentence);
+    setState({
+      vocabSentenceMessages: [...messages, { role: "lumi", text: reply }],
+      vocabLoading: false,
+    });
   }
-  setState({ vocabSentenceDraft: "", vocabSentenceMessages: messages });
-  const reply = await mockApi.reviewVocabularySentence(current.word, current.meaning, sentence);
-  setState({ vocabSentenceMessages: [...messages, { role: "lumi", text: reply }] });
+}
+
+async function handleVocabScoreRequest() {
+  const current = studyWords[state.currentWordIndex % studyWords.length];
+  const userMessages = state.vocabSentenceMessages.filter((m) => m.role === "user");
+  if (userMessages.length === 0) return;
+  const lastSentence = userMessages[userMessages.length - 1].text;
+
+  setState({ vocabLoading: true });
+
+  try {
+    const response = await fetch(API_ENDPOINTS.sageVocabScore, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        word: current.word,
+        meaning: current.meaning,
+        sentence: lastSentence,
+        history: state.vocabSentenceMessages,
+      }),
+    });
+
+    if (!response.ok) throw new Error(`Score API error: ${response.status}`);
+    const data = await response.json();
+    setState({ vocabScore: data.score, vocabLoading: false });
+  } catch (err) {
+    console.warn("Score API unavailable:", err.message);
+    setState({ vocabLoading: false });
+  }
 }
 
 function escapeHtml(value) {
