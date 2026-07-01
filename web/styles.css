@@ -2161,7 +2161,7 @@ button {
 
 .vocab-practice-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
   gap: 18px;
   align-items: stretch;
   overflow: hidden;
@@ -2178,6 +2178,11 @@ button {
   border-radius: 8px;
   background: #fff9e8;
   overflow: hidden;
+}
+
+.vocab-set-panel {
+  background: #f8fbf7;
+  border: 1px solid #dfe9e4;
 }
 
 .study-word strong {
@@ -2224,7 +2229,7 @@ button {
 
 .sentence-coach {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   gap: 12px;
   min-width: 0;
   min-height: 100%;
@@ -2267,6 +2272,139 @@ button {
 .study-word .primary-btn {
   width: 100%;
   margin-top: auto;
+}
+
+.vocab-set-list {
+  display: grid;
+  gap: 10px;
+}
+
+.vocab-set-card {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid #d8e4df;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.vocab-set-card:hover,
+.vocab-set-card.selected {
+  border-color: #79ad9b;
+  background: #eff8f3;
+}
+
+.vocab-set-card strong {
+  color: #18372f;
+  font-size: 1rem;
+  line-height: 1.15;
+}
+
+.vocab-set-card span {
+  color: #687281;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.definition-panel,
+.vocab-task-card,
+.good-sentence-card,
+.vocab-feedback-card {
+  border: 1px solid #dce7e5;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.definition-panel {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+}
+
+.definition-panel strong {
+  color: #18372f;
+  font-size: 1.25rem;
+}
+
+.definition-panel p,
+.definition-panel small {
+  margin: 0;
+  color: #31404d;
+  line-height: 1.45;
+}
+
+.definition-panel small {
+  color: #687281;
+  font-weight: 650;
+}
+
+.completion-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #d6e0e4;
+  border-radius: 999px;
+  background: #fff;
+  color: #687281;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.completion-badge.complete {
+  border-color: #a7d8c3;
+  background: #e9f8f0;
+  color: #18745d;
+}
+
+.vocab-task-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+}
+
+.vocab-task-card p {
+  margin: 0;
+  color: #31404d;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.good-sentence-card {
+  padding: 14px 16px;
+  background: #fff8e8;
+  color: #31404d;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+.vocab-feedback-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  background: #fffdf8;
+}
+
+.vocab-feedback-card.complete {
+  border-color: #a7d8c3;
+  background: #f0faf4;
+}
+
+.vocab-feedback-card strong {
+  color: #18372f;
+}
+
+.vocab-feedback-line {
+  margin: 0;
+  color: #31404d;
+  line-height: 1.45;
 }
 
 .sentence-form .primary-btn {
@@ -2367,6 +2505,11 @@ button {
   .vocab-practice-head .secondary-btn {
     grid-column: 1 / -1;
     width: fit-content;
+  }
+
+  .vocab-task-card {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .graph-skill-board {

@@ -279,11 +279,25 @@ function normalizePlanRoute(route) {
   return aliases[value] || "academic-discussion";
 }
 
-function buildDailyPlanPrompt(message, currentPlan) {
+function getUserLearningContext(userId = "lumi_student") {
+  return {
+    userId,
+    strategicKgView: kg.strategicView(),
+    guidanceProfile: guidanceNote,
+  };
+}
+
+function buildDailyPlanPrompt(message, currentPlan, userContext = getUserLearningContext()) {
   return `USER_REQUEST: ${message || "No specific request. Build a balanced TOEFL study plan for today."}
 
 CURRENT_PLAN:
 ${JSON.stringify(currentPlan || [], null, 2)}
+
+USER_KG_STRATEGIC_VIEW:
+${JSON.stringify(userContext.strategicKgView || {}, null, 2)}
+
+USER_GUIDANCE_PROFILE:
+${userContext.guidanceProfile || "(none)"}
 
 AVAILABLE_TOOLS:
 ${PLAN_TOOLS.map((tool) => `- route=${tool.route}; tag=${tool.tag}; label=${tool.label}; description=${tool.description}`).join("\n")}
@@ -293,6 +307,7 @@ Rules:
 - Return JSON only.
 - Use 3 to 6 items.
 - Respect any time budget in USER_REQUEST.
+- Personalize the plan from USER_KG_STRATEGIC_VIEW and USER_GUIDANCE_PROFILE.
 - Prefer a balanced mix across weak/important skills.
 - Each item must be clickable by route, so route must be exactly one of: ${PLAN_TOOLS.map((tool) => tool.route).join(", ")}.
 - Titles should include an approximate duration and task name.
@@ -311,14 +326,15 @@ Schema:
 }`;
 }
 
-async function runDailyPlanModel(message, currentPlan) {
+async function runDailyPlanModel(message, currentPlan, userId = "lumi_student") {
+  const userContext = getUserLearningContext(userId);
   const raw = await callDeepSeek(
     [
       {
         role: "system",
-        content: "You are Lumi's AI study planner. Build concise TOEFL daily todo plans from the app's available tools. Return valid JSON only.",
+        content: "You are Lumi's AI study planner. Build concise TOEFL daily todo plans from the app's available tools. You can inspect the specific user's KG strategic view and guidance profile to personalize the plan. Return valid JSON only.",
       },
-      { role: "user", content: buildDailyPlanPrompt(message, currentPlan) },
+      { role: "user", content: buildDailyPlanPrompt(message, currentPlan, userContext) },
     ],
     "json"
   );
@@ -570,6 +586,129 @@ async function runScoringModel(word, meaning, sentence, history) {
   }
 }
 
+const VOCAB_BATCH_SYSTEM_PROMPT = `You are Lumi, a precise Socratic TOEFL vocabulary coach.
+Evaluate whether the student's latest sentence naturally uses all five target words.
+
+Return ONLY a JSON object:
+{
+  "reply": "2-4 concise student-facing sentences. If incomplete, ask one focused Socratic question.",
+  "isComplete": true,
+  "missingWords": ["word"],
+  "weakUsages": ["word or short issue"],
+  "suggestedSentence": "one natural sentence using all five words"
+}
+
+Completion rules:
+- isComplete is true when the student has used all five target words naturally in one sentence, or the conversation history shows clear understanding of the complete set.
+- If a word is absent, include it in missingWords.
+- If a word is present but awkward, contradictory, or not aligned with its meaning, include it or a short issue in weakUsages.
+- If the sentence is not complete, do not simply give the answer; guide the student with one focused question.
+- Keep the reply natural, specific, and useful for TOEFL writing.`;
+
+function sanitizeBatchWords(words) {
+  return (Array.isArray(words) ? words : [])
+    .slice(0, 5)
+    .map((item) => ({
+      word: String(item?.word || "").trim(),
+      meaning: String(item?.meaning || "").trim(),
+    }))
+    .filter((item) => item.word);
+}
+
+function normalizeForWordMatch(value) {
+  return String(value || "").toLowerCase();
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function sentenceContainsWord(sentence, word) {
+  const normalized = normalizeForWordMatch(sentence);
+  return new RegExp(`\\b${escapeRegExp(word.toLowerCase())}\\b`).test(normalized);
+}
+
+function buildSuggestedBatchSentence(words) {
+  const wordList = words.map((item) => item.word);
+  if (wordList.includes("resilient")) {
+    return "A resilient researcher wrote a coherent report to substantiate her claim, clarified the ambiguous findings, and proposed training to mitigate future errors.";
+  }
+  return "As smartphones became prevalent on campus, the committee decided to scrutinize one consequence of constant notifications and integrate quiet study policies to mitigate distraction.";
+}
+
+function evaluateVocabBatchLocally(words, sentence) {
+  const missingWords = words.filter((item) => !sentenceContainsWord(sentence, item.word)).map((item) => item.word);
+  const wordCount = String(sentence || "").split(/\s+/).filter(Boolean).length;
+  const weakUsages = wordCount < 14 ? ["sentence context is too short to show natural use"] : [];
+  const isComplete = missingWords.length === 0 && weakUsages.length === 0;
+  const suggestedSentence = buildSuggestedBatchSentence(words);
+  return {
+    reply: isComplete
+      ? "This sentence completes the set because it uses all five words in a clear relationship. To make it even stronger for TOEFL writing, keep this cause-and-effect structure in mind."
+      : `This set is not complete yet.${missingWords.length ? ` Add the missing word${missingWords.length > 1 ? "s" : ""}: ${missingWords.join(", ")}.` : ""} What specific situation can connect all five words naturally?`,
+    isComplete,
+    missingWords,
+    weakUsages,
+    suggestedSentence,
+  };
+}
+
+function enforceLiteralBatchWords(result, words, sentence) {
+  const literalMissing = words.filter((item) => !sentenceContainsWord(sentence, item.word)).map((item) => item.word);
+  const suggestedSentence = normalizeSuggestedBatchSentence(result.suggestedSentence, words);
+  if (!literalMissing.length) return { ...result, suggestedSentence };
+  const missingWords = Array.from(new Set([...(result.missingWords || []), ...literalMissing]));
+  return {
+    ...result,
+    isComplete: false,
+    missingWords,
+    suggestedSentence,
+    reply: `This set is not complete yet. Please include the target word${missingWords.length > 1 ? "s" : ""}: ${missingWords.join(", ")}. How can you revise the same idea so all five words appear naturally?`,
+  };
+}
+
+function normalizeSuggestedBatchSentence(sentence, words) {
+  const value = String(sentence || "").trim();
+  const hasAllWords = value && words.every((item) => sentenceContainsWord(value, item.word));
+  return hasAllWords ? value : buildSuggestedBatchSentence(words);
+}
+
+function buildVocabBatchPrompt(words, sentence, history) {
+  const historyText = history.length
+    ? history.map((m) => `${m.role === "user" ? "Student" : "Coach"}: ${m.text}`).join("\n")
+    : "(none)";
+  const wordText = words.map((item, index) => `${index + 1}. ${item.word}: ${item.meaning}`).join("\n");
+  return `TARGET_WORDS:
+${wordText}
+
+STUDENT_SENTENCE:
+${sentence}
+
+CONVERSATION_HISTORY:
+${historyText}
+
+Evaluate the sentence and conversation according to the completion rules.`;
+}
+
+async function runVocabBatchModel(words, sentence, history) {
+  const prompt = buildVocabBatchPrompt(words, sentence, history);
+  const raw = await callDeepSeek(
+    [
+      { role: "system", content: VOCAB_BATCH_SYSTEM_PROMPT },
+      { role: "user", content: prompt },
+    ],
+    "json"
+  );
+  const parsed = JSON.parse(raw);
+  return {
+    reply: String(parsed.reply || "").trim(),
+    isComplete: Boolean(parsed.isComplete),
+    missingWords: Array.isArray(parsed.missingWords) ? parsed.missingWords.map(String) : [],
+    weakUsages: Array.isArray(parsed.weakUsages) ? parsed.weakUsages.map(String) : [],
+    suggestedSentence: normalizeSuggestedBatchSentence(parsed.suggestedSentence, words),
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // API Endpoints
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -582,18 +721,20 @@ async function runScoringModel(word, meaning, sentence, history) {
  * Returns: { plan, source }
  */
 app.post("/api/lumi/daily-plan", async (req, res) => {
-  const { message = "", currentPlan = [] } = req.body || {};
+  const { message = "", currentPlan = [], userId = "lumi_student" } = req.body || {};
   try {
-    const data = await runDailyPlanModel(message, currentPlan);
+    const data = await runDailyPlanModel(message, currentPlan, userId);
     res.json({
       plan: sanitizeDailyPlan(data.plan, message),
       source: "deepseek",
+      userContextUsed: true,
     });
   } catch (err) {
     console.error("daily-plan error, using fallback:", err.message);
     res.json({
       plan: sanitizeDailyPlan(fallbackDailyPlan(message), message),
       source: "fallback",
+      userContextUsed: true,
     });
   }
 });
@@ -674,6 +815,64 @@ app.post("/api/sage/vocab-chat", async (req, res) => {
       error: "Failed to generate response",
       reply: `Let's work with "${req.body?.word || "this word"}". Can you tell me what situation comes to mind when you think about its meaning? Try to describe a specific moment or example.`,
     });
+  }
+});
+
+/**
+ * POST /api/sage/vocab-batch-chat
+ * Batch vocabulary coaching for one sentence using five target words.
+ *
+ * Body: { words: [{ word, meaning }], sentence, history: [{ role, text }] }
+ * Returns: { reply, isComplete, missingWords, weakUsages, suggestedSentence }
+ */
+app.post("/api/sage/vocab-batch-chat", async (req, res) => {
+  const { sentence = "", history = [] } = req.body || {};
+  const words = sanitizeBatchWords(req.body?.words);
+
+  if (words.length !== 5 || !sentence) {
+    return res.status(400).json({
+      error: "five words and sentence are required",
+      reply: "Please send five target words and one sentence for this set.",
+      isComplete: false,
+      missingWords: words.map((item) => item.word),
+      weakUsages: [],
+      suggestedSentence: buildSuggestedBatchSentence(words),
+    });
+  }
+
+  try {
+    const result = await runVocabBatchModel(words, sentence, history);
+    const enforcedResult = enforceLiteralBatchWords(result, words, sentence);
+
+    kg.recordInteraction({
+      type: "vocab_batch_chat",
+      words: words.map((item) => item.word),
+      sentence,
+      isComplete: enforcedResult.isComplete,
+      missingWords: enforcedResult.missingWords,
+      weakUsages: enforcedResult.weakUsages,
+    });
+
+    for (const item of words) {
+      kg.addNode("VocabWord", item.word, enforcedResult.isComplete ? 0.62 : 0.48, {
+        meaning: item.meaning,
+        lastPracticed: new Date().toISOString(),
+        practicedInBatch: true,
+      });
+    }
+    kg.addNode("Skill", "five_word_sentence_construction", enforcedResult.isComplete ? 0.66 : 0.5);
+
+    res.json(enforcedResult);
+  } catch (err) {
+    console.error("vocab-batch-chat error, using fallback:", err.message);
+    const result = enforceLiteralBatchWords(evaluateVocabBatchLocally(words, sentence), words, sentence);
+    kg.recordInteraction({
+      type: "vocab_batch_chat_fallback",
+      words: words.map((item) => item.word),
+      sentence,
+      isComplete: result.isComplete,
+    });
+    res.json(result);
   }
 });
 
