@@ -857,6 +857,7 @@ function academicHowToPanel() {
     <aside class="academic-guide revision-panel">
       ${academicScoreBadge("4/6")}
       ${academicRevisionProgress()}
+      <button class="secondary-btn guide-back-btn" id="skipAcademicFixes" type="button">Skip</button>
       <h2>How to use this page</h2>
       <p>Click a highlighted part to receive Socratic questions, revise your sentence, and save your improvement.</p>
       <div class="legend-list" aria-label="Highlight color legend">
@@ -876,7 +877,10 @@ function academicHighlightPanel(item) {
     <aside class="academic-guide revision-panel">
       ${academicScoreBadge("4/6")}
       ${academicRevisionProgress()}
-      <button class="secondary-btn guide-back-btn" id="showAcademicHowTo" type="button">How to use this page</button>
+      <div class="revision-action-row">
+        <button class="secondary-btn guide-back-btn" id="showAcademicHowTo" type="button">How to use this page</button>
+        <button class="secondary-btn guide-back-btn" id="skipAcademicFixes" type="button">Skip</button>
+      </div>
       <h2>${escapeHtml(item.label)}</h2>
       <div class="selected-quote">${escapeHtml(item.text)}</div>
       <div class="socratic-box">
@@ -1674,6 +1678,17 @@ function bindEvents() {
   if (showAcademicHowTo) {
     showAcademicHowTo.addEventListener("click", () => {
       setState({ academicSelectedHighlight: "", academicPanelMessage: "" });
+    });
+  }
+
+  const skipAcademicFixes = document.querySelector("#skipAcademicFixes");
+  if (skipAcademicFixes) {
+    skipAcademicFixes.addEventListener("click", () => {
+      setState({
+        academicCorrections: getCompletedAcademicCorrections(),
+        academicSelectedHighlight: "",
+        academicPanelMessage: "",
+      });
     });
   }
 

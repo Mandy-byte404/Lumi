@@ -1338,6 +1338,12 @@ button {
   justify-self: start;
 }
 
+.revision-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .modal-scrim {
   position: fixed;
   inset: 0;
