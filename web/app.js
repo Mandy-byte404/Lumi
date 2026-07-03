@@ -42,7 +42,7 @@ let academicProgressTimer = null;
 let academicProgressTargetStage = "taskCheck";
 let academicProgressTitle = "Lumi is checking...";
 
-const USE_REAL_API = true;
+const USE_REAL_API = ["localhost", "127.0.0.1"].includes(window.location.hostname);
 const API_ENDPOINTS = {
   dailyPlan: "/api/lumi/daily-plan",
   speakingCoach: "/api/lumi/speaking-coach",
