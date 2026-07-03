@@ -6,12 +6,19 @@ const state = {
   toolPage: null,
   mascotMood: "greet",
   plan: [],
+  planLoading: false,
+  planError: "",
   completedPlanItems: {},
   userPlanInput: "",
   selectedVocabDeckIndex: null,
   currentWordIndex: 0,
+  selectedVocabDefinitionIndex: 0,
+  completedVocabSets: {},
   vocabSentenceDraft: "",
   vocabSentenceMessages: [],
+  vocabLoading: false,
+  vocabBatchResult: null,
+  vocabGoodSentenceVisible: false,
   checkInCalendar: getPresetCheckInCalendar(),
   graphSkill: "",
   graphPath: [],
@@ -35,13 +42,16 @@ let academicProgressTimer = null;
 let academicProgressTargetStage = "taskCheck";
 let academicProgressTitle = "Lumi is checking...";
 
-const USE_REAL_API = false;
+const USE_REAL_API = true;
 const API_ENDPOINTS = {
   dailyPlan: "/api/lumi/daily-plan",
   speakingCoach: "/api/lumi/speaking-coach",
   vocabDeckProgress: "/api/lumi/vocab-deck-progress",
   vocabSentenceCoach: "/api/lumi/vocab-sentence-coach",
   checkInCalendar: "/api/lumi/check-ins",
+  sageVocabChat: "/api/sage/vocab-chat",
+  sageVocabBatchChat: "/api/sage/vocab-batch-chat",
+  sageVocabScore: "/api/sage/vocab-score",
 };
 
 const lumiImages = {
@@ -68,10 +78,14 @@ const mockApi = {
   },
   async buildDailyPlan(input) {
     if (USE_REAL_API) {
-      return postJson(API_ENDPOINTS.dailyPlan, { message: input });
+      const data = await postJson(API_ENDPOINTS.dailyPlan, {
+        message: input,
+        currentPlan: state.plan,
+      });
+      return normalizeDailyPlan(data.plan || data);
     }
     await wait(850);
-    return getDefaultPlan();
+    return normalizeDailyPlan(getDefaultPlan());
   },
   async lumiReply(message) {
     if (USE_REAL_API) {
@@ -221,6 +235,56 @@ function getDefaultPlan() {
   ];
 }
 
+function normalizeDailyPlan(plan) {
+  const fallback = getDefaultPlan();
+  const source = Array.isArray(plan) && plan.length ? plan : fallback;
+  return source.slice(0, 6).map((item, index) => {
+    const route = normalizePlanRoute(item.route || item.tool || item.target);
+    const tag = String(item.tag || routeLabel(route));
+    const status = ["continue", "unfinished", "complete"].includes(item.status) ? item.status : "unfinished";
+    const action = String(item.action || (status === "complete" ? "Done" : status === "continue" ? "Continue" : "Start"));
+    return {
+      title: String(item.title || `${routeLabel(route)} practice ${index + 1}`),
+      tag,
+      status,
+      action,
+      route,
+    };
+  });
+}
+
+function normalizePlanRoute(route) {
+  const value = String(route || "").toLowerCase().replaceAll("_", "-").trim();
+  const aliases = {
+    writing: "academic-discussion",
+    academic: "academic-discussion",
+    "academic-discussion": "academic-discussion",
+    vocabulary: "vocab",
+    vocab: "vocab",
+    speaking: "speaking",
+    listening: "listening",
+    reading: "reading",
+    problems: "problems",
+    practice: "problems",
+    mock: "mock",
+    "mock-exam": "mock",
+  };
+  return aliases[value] || "problems";
+}
+
+function routeLabel(route) {
+  const labels = {
+    "academic-discussion": "Writing",
+    vocab: "Vocabulary",
+    speaking: "Speaking",
+    listening: "Listening",
+    reading: "Reading",
+    problems: "Practice",
+    mock: "Mock",
+  };
+  return labels[route] || "Practice";
+}
+
 function getPresetVocabDecks() {
   return [
     { name: "TOEFL Core 800", count: 800, learned: 286, mastered: 164, due: 42 },
@@ -231,9 +295,66 @@ function getPresetVocabDecks() {
 }
 
 const studyWords = [
-  { word: "resilient", meaning: "able to recover quickly from difficulty", imagePosition: "left center" },
-  { word: "coherent", meaning: "logical and easy to understand", imagePosition: "center center" },
-  { word: "substantiate", meaning: "to support with evidence", imagePosition: "right center" },
+  {
+    word: "resilient",
+    meaning: "able to recover quickly from difficulty",
+    example: "The resilient student changed her study routine after a low score instead of giving up.",
+    imagePosition: "left center",
+  },
+  {
+    word: "coherent",
+    meaning: "logical and easy to understand",
+    example: "Her coherent explanation helped the group understand why the experiment failed.",
+    imagePosition: "center center",
+  },
+  {
+    word: "substantiate",
+    meaning: "to support with evidence",
+    example: "The professor used survey data to substantiate his claim about online learning.",
+    imagePosition: "right center",
+  },
+  {
+    word: "ambiguous",
+    meaning: "unclear because it can be understood in more than one way",
+    example: "The ambiguous instructions confused students because the deadline could mean Monday morning or Monday night.",
+    imagePosition: "left center",
+  },
+  {
+    word: "mitigate",
+    meaning: "to make a problem less serious or harmful",
+    example: "The university added quiet study rooms to mitigate the stress of crowded libraries.",
+    imagePosition: "center center",
+  },
+  {
+    word: "plausible",
+    meaning: "reasonable and likely to be true",
+    example: "Her explanation sounded plausible because it matched the evidence from the lecture.",
+    imagePosition: "right center",
+  },
+  {
+    word: "scrutinize",
+    meaning: "to examine something very carefully",
+    example: "Researchers scrutinize their data before publishing conclusions.",
+    imagePosition: "left center",
+  },
+  {
+    word: "consequence",
+    meaning: "a result or effect of an action or condition",
+    example: "One consequence of poor time management is that students rush through important assignments.",
+    imagePosition: "center center",
+  },
+  {
+    word: "integrate",
+    meaning: "to combine one thing with another so they work together",
+    example: "Good teachers integrate examples, questions, and feedback into every lesson.",
+    imagePosition: "right center",
+  },
+  {
+    word: "prevalent",
+    meaning: "common or widespread in a particular place or time",
+    example: "Smartphones are prevalent on campus, so many professors design mobile-friendly materials.",
+    imagePosition: "left center",
+  },
 ];
 
 const resilientDialogueReplies = [
@@ -249,12 +370,8 @@ const resilientDialogueReplies = [
 ];
 
 function getVocabularyExample(word) {
-  const examples = {
-    resilient: "The resilient student recovered from a low quiz score by changing her study routine and asking better questions.",
-    coherent: "Her coherent explanation helped the group understand why the experiment produced unexpected results.",
-    substantiate: "The professor uses survey data and recent research to substantiate his claim.",
-  };
-  return examples[word] || `A strong sentence uses "${word}" in a clear situation with a concrete result.`;
+  const item = studyWords.find((entry) => entry.word === word);
+  return item?.example || `A strong sentence uses "${word}" in a clear situation with a concrete result.`;
 }
 
 const problems = [
@@ -492,13 +609,12 @@ function homePage() {
         <div class="coach-copy">
           <p class="eyebrow">TOEFL Home</p>
           <h2>${hasPlan ? "Your plan is ready." : "How long would you like to study today?"}</h2>
-          <p>${hasPlan ? "Lumi shaped a short plan from your goal. You can still add extra practice below." : "Tell Lumi your available time and whether you already have a plan."}</p>
-          ${hasPlan ? "" : `
-            <form class="plan-form" id="planForm">
-              <input id="planInput" value="${escapeHtml(state.userPlanInput)}" placeholder="Example: 90 minutes, no plan yet" />
-              <button class="primary-btn" type="submit">Plan</button>
-            </form>
-          `}
+          <p>${hasPlan ? "Lumi shaped a short plan from your goal and today's TOEFL tools." : "Tell Lumi your available time and whether you already have a plan."}</p>
+          <form class="plan-form" id="planForm">
+            <input id="planInput" value="${escapeHtml(state.userPlanInput)}" placeholder="Example: 90 minutes, no plan yet" ${state.planLoading ? "disabled" : ""} />
+            <button class="primary-btn" type="submit" ${state.planLoading ? "disabled" : ""}>${state.planLoading ? "Planning..." : hasPlan ? "Replan" : "Plan"}</button>
+          </form>
+          ${state.planError ? `<p class="plan-error">${escapeHtml(state.planError)}</p>` : ""}
           ${hasPlan ? planList() : ""}
         </div>
       </section>
@@ -1366,37 +1482,155 @@ function vocabDeckRow(deck, index) {
 }
 
 function vocabPracticePage() {
-  const current = studyWords[state.currentWordIndex % studyWords.length];
   const deck = vocabDecks[state.selectedVocabDeckIndex] || vocabDecks[0];
-  const wordLengthClass = getVocabularyWordLengthClass(current.word);
+  const setWords = getCurrentVocabSet();
+  const selectedWord = setWords[state.selectedVocabDefinitionIndex] || setWords[0];
+  const setNumber = state.currentWordIndex + 1;
+  const completed = isCurrentVocabSetComplete();
+  const result = state.vocabBatchResult;
+  const missingWords = result?.missingWords?.length
+    ? `<p class="vocab-feedback-line"><strong>Missing:</strong> ${result.missingWords.map(escapeHtml).join(", ")}</p>`
+    : "";
+  const weakUsages = result?.weakUsages?.length
+    ? `<p class="vocab-feedback-line"><strong>Needs work:</strong> ${result.weakUsages.map(escapeHtml).join(", ")}</p>`
+    : "";
+  const goodSentence = getCurrentGoodVocabSentence();
   return `
     <section class="panel content-card vocab-practice">
       <div class="vocab-practice-head">
         <button class="secondary-btn" id="backToDecks">Back</button>
         <div>
-          <p class="eyebrow">Vocabulary Practice</p>
+          <p class="eyebrow">Vocabulary Practice Set ${setNumber}</p>
           <h2>${escapeHtml(deck.name)}</h2>
         </div>
-        <span class="tag">${deck.learned}/${deck.count}</span>
+        <span class="completion-badge ${completed ? "complete" : ""}">${completed ? "Completed" : "In progress"}</span>
       </div>
       <div class="vocab-practice-grid">
-        <aside class="study-word">
-          <strong class="vocab-word ${wordLengthClass}">${formatVocabularyWord(current.word)}</strong>
-          <span>${current.meaning}</span>
-          <div class="word-scene" style="background-position:${current.imagePosition};" aria-label="Illustration for ${escapeHtml(current.word)}"></div>
-          <button class="primary-btn" id="nextWord">Next Word</button>
+        <aside class="study-word vocab-set-panel">
+          <div class="vocab-set-list">
+            ${setWords.map((item, index) => `
+              <button class="vocab-set-card ${index === state.selectedVocabDefinitionIndex ? "selected" : ""}" data-vocab-word="${index}" type="button">
+                <strong>${escapeHtml(item.word)}</strong>
+                <span>${escapeHtml(getShortMeaning(item.meaning))}</span>
+              </button>
+            `).join("")}
+          </div>
+          <div class="definition-panel">
+            <p class="eyebrow">Definition</p>
+            <strong>${escapeHtml(selectedWord.word)}</strong>
+            <p>${escapeHtml(selectedWord.meaning)}</p>
+            <small>Example: ${escapeHtml(selectedWord.example)}</small>
+          </div>
+          <button class="primary-btn" id="nextSet" type="button">Next Set</button>
         </aside>
         <div class="sentence-coach">
+          <div class="vocab-task-card">
+            <div>
+              <p class="eyebrow">One-Sentence Challenge</p>
+              <p>Use all five words naturally in one sentence.</p>
+            </div>
+            <button class="secondary-btn" id="viewGoodSentence" type="button">${state.vocabGoodSentenceVisible ? "Hide Good Sentence" : "View Good Sentence"}</button>
+          </div>
+          ${state.vocabGoodSentenceVisible ? `<div class="good-sentence-card">${escapeHtml(goodSentence)}</div>` : ""}
+          ${result ? `<div class="vocab-feedback-card ${result.isComplete ? "complete" : ""}">
+            <strong>${result.isComplete ? "Set completed" : "Keep refining"}</strong>
+            ${missingWords}
+            ${weakUsages}
+            ${result.suggestedSentence && !state.vocabGoodSentenceVisible ? `<p class="vocab-feedback-line"><strong>Try:</strong> ${escapeHtml(result.suggestedSentence)}</p>` : ""}
+          </div>` : ""}
           <div class="chat-box sentence-chat" id="vocabSentenceChat">
             ${state.vocabSentenceMessages.map((message) => `<div class="bubble ${message.role}">${formatChatMessage(message.text)}</div>`).join("")}
+            ${state.vocabLoading ? '<div class="bubble lumi typing-indicator"><span></span><span></span><span></span></div>' : ""}
           </div>
           <form class="sentence-form" id="vocabSentenceForm">
-            <textarea id="vocabSentenceInput" rows="5" placeholder="Write one sentence with ${escapeHtml(current.word)}">${escapeHtml(state.vocabSentenceDraft)}</textarea>
-            <button class="primary-btn" type="submit">Check</button>
+            <textarea id="vocabSentenceInput" rows="5" placeholder="Write one sentence using: ${setWords.map((item) => item.word).join(", ")}"${state.vocabLoading ? " disabled" : ""}>${escapeHtml(state.vocabSentenceDraft)}</textarea>
+            <button class="primary-btn" type="submit"${state.vocabLoading ? " disabled" : ""}>Check</button>
           </form>
         </div>
       </div>
     </section>
+  `;
+}
+
+function getCurrentVocabSet() {
+  const setSize = 5;
+  const start = (state.currentWordIndex * setSize) % studyWords.length;
+  return Array.from({ length: setSize }, (_, offset) => studyWords[(start + offset) % studyWords.length]);
+}
+
+function getVocabSetKey() {
+  const deckIndex = state.selectedVocabDeckIndex ?? 0;
+  return `${deckIndex}:${state.currentWordIndex}`;
+}
+
+function isCurrentVocabSetComplete() {
+  return Boolean(state.completedVocabSets[getVocabSetKey()]);
+}
+
+function getShortMeaning(meaning) {
+  const value = String(meaning || "");
+  return value.length > 54 ? `${value.slice(0, 51)}...` : value;
+}
+
+function getCurrentGoodVocabSentence() {
+  const words = getCurrentVocabSet().map((item) => item.word);
+  if (words.includes("resilient")) {
+    return "A resilient researcher wrote a coherent report to substantiate her claim, clarified the ambiguous findings, and proposed training to mitigate future errors.";
+  }
+  return "As smartphones became prevalent on campus, the committee decided to scrutinize one consequence of constant notifications and integrate quiet study policies to mitigate distraction.";
+}
+
+function evaluateVocabBatchLocally(words, sentence) {
+  const normalized = sentence.toLowerCase();
+  const missingWords = words
+    .filter((item) => !new RegExp(`\\b${escapeRegExp(item.word.toLowerCase())}\\b`).test(normalized))
+    .map((item) => item.word);
+  const wordCount = sentence.split(/\s+/).filter(Boolean).length;
+  const isComplete = missingWords.length === 0 && wordCount >= 14;
+  const suggestedSentence = getCurrentGoodVocabSentence();
+  return {
+    reply: isComplete
+      ? "This works as a complete set sentence: you used all five words in a context that is specific enough to show their relationships."
+      : `You are close, but the set is not complete yet. Which specific situation can connect all five words clearly?${missingWords.length ? ` Try adding: ${missingWords.join(", ")}.` : ""}`,
+    isComplete,
+    missingWords,
+    weakUsages: wordCount < 14 ? ["The sentence needs a clearer context or cause-and-effect relationship."] : [],
+    suggestedSentence,
+  };
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function vocabScorePanel(score) {
+  if (!score) return "";
+  const pct = (v) => Math.round((v || 0) * 100);
+  const barColor = (v) => v >= 0.7 ? "#2e9b78" : v >= 0.5 ? "#e6a817" : "#d45050";
+  const dimensions = [
+    { label: "Grammar", value: score.grammar_correctness },
+    { label: "Usage", value: score.word_usage_accuracy },
+    { label: "Context", value: score.context_richness },
+    { label: "TOEFL", value: score.toefl_readiness },
+  ];
+  return `
+    <div class="vocab-score-panel">
+      <p class="eyebrow">Sentence Score</p>
+      <div class="vocab-score-overall ${score.is_acceptable ? 'score-pass' : 'score-needs-work'}">
+        <strong>${pct(score.overall_score)}%</strong>
+        <span>${score.is_acceptable ? "Acceptable" : "Needs Work"}</span>
+      </div>
+      <div class="vocab-score-bars">
+        ${dimensions.map((d) => `
+          <div class="score-bar-row">
+            <span class="score-bar-label">${d.label}</span>
+            <div class="score-bar-track"><div class="score-bar-fill" style="width:${pct(d.value)}%;background:${barColor(d.value)}"></div></div>
+            <span class="score-bar-value">${pct(d.value)}</span>
+          </div>
+        `).join("")}
+      </div>
+      ${score.feedback_summary ? `<p class="score-feedback">${escapeHtml(score.feedback_summary)}</p>` : ""}
+    </div>
   `;
 }
 
@@ -1425,8 +1659,20 @@ function formatVocabularyWord(word) {
   return `${escapeHtml(word.slice(0, splitAt))}-<br>${escapeHtml(word.slice(splitAt))}`;
 }
 
-function getInitialVocabSentenceMessages(word) {
-  return [];
+function getVocabSetWordsForIndex(setIndex) {
+  const setSize = 5;
+  const start = (setIndex * setSize) % studyWords.length;
+  return Array.from({ length: setSize }, (_, offset) => studyWords[(start + offset) % studyWords.length]);
+}
+
+function getInitialVocabSentenceMessages(words) {
+  const wordList = (Array.isArray(words) ? words : getCurrentVocabSet()).map((item) => item.word).join(", ");
+  return [
+    {
+      role: "lumi",
+      text: `Let's practice this five-word set: ${wordList}. Write one natural sentence that uses all five words. I will check whether each word fits the meaning and context.`,
+    },
+  ];
 }
 
 function getNextResilientReply(messages) {
@@ -1500,6 +1746,8 @@ function bindEvents() {
           selectedVocabDeckIndex: null,
           vocabSentenceDraft: "",
           vocabSentenceMessages: [],
+          vocabBatchResult: null,
+          vocabGoodSentenceVisible: false,
         });
         return;
       }
@@ -1555,15 +1803,42 @@ function bindEvents() {
     planForm.addEventListener("submit", handlePlanSubmit);
   }
 
-  const nextWord = document.querySelector("#nextWord");
-  if (nextWord) {
-    nextWord.addEventListener("click", () => {
+  const nextSet = document.querySelector("#nextSet");
+  if (nextSet) {
+    nextSet.addEventListener("click", () => {
       const nextIndex = state.currentWordIndex + 1;
-      const nextWordItem = studyWords[nextIndex % studyWords.length];
       setState({
         currentWordIndex: nextIndex,
+        selectedVocabDefinitionIndex: 0,
         vocabSentenceDraft: "",
-        vocabSentenceMessages: getInitialVocabSentenceMessages(nextWordItem.word),
+        vocabSentenceMessages: getInitialVocabSentenceMessages(getVocabSetWordsForIndex(nextIndex)),
+        vocabBatchResult: null,
+        vocabGoodSentenceVisible: false,
+        vocabLoading: false,
+      });
+    });
+  }
+
+  document.querySelectorAll("[data-vocab-word]").forEach((el) => {
+    el.addEventListener("click", () => {
+      setState({ selectedVocabDefinitionIndex: Number(el.dataset.vocabWord) || 0 });
+    });
+  });
+
+  const viewGoodSentence = document.querySelector("#viewGoodSentence");
+  if (viewGoodSentence) {
+    viewGoodSentence.addEventListener("click", () => {
+      const completedVocabSets = { ...state.completedVocabSets, [getVocabSetKey()]: true };
+      setState({
+        completedVocabSets,
+        vocabGoodSentenceVisible: !state.vocabGoodSentenceVisible,
+        vocabBatchResult: {
+          reply: "Good example viewed. This set is marked complete.",
+          isComplete: true,
+          missingWords: [],
+          weakUsages: [],
+          suggestedSentence: getCurrentGoodVocabSentence(),
+        },
       });
     });
   }
@@ -1573,8 +1848,12 @@ function bindEvents() {
       setState({
         selectedVocabDeckIndex: Number(el.dataset.vocabDeck),
         currentWordIndex: 0,
+        selectedVocabDefinitionIndex: 0,
         vocabSentenceDraft: "",
-        vocabSentenceMessages: getInitialVocabSentenceMessages(studyWords[0].word),
+        vocabSentenceMessages: getInitialVocabSentenceMessages(getVocabSetWordsForIndex(0)),
+        vocabBatchResult: null,
+        vocabGoodSentenceVisible: false,
+        vocabLoading: false,
       });
     });
   });
@@ -1586,6 +1865,8 @@ function bindEvents() {
         selectedVocabDeckIndex: null,
         vocabSentenceDraft: "",
         vocabSentenceMessages: [],
+        vocabBatchResult: null,
+        vocabGoodSentenceVisible: false,
       });
     });
   }
@@ -1599,42 +1880,7 @@ function bindEvents() {
     el.addEventListener("click", () => {
       const item = state.plan[Number(el.dataset.planAction)];
       if (!item) return;
-      if (item.route === "speaking") {
-        goToefl("tool", "speaking");
-        return;
-      }
-      if (item.route === "vocab") {
-        setState({
-          app: "toefl",
-          toeflPage: "tool",
-          toolPage: "vocab",
-          selectedVocabDeckIndex: null,
-          vocabSentenceDraft: "",
-          vocabSentenceMessages: [],
-        });
-        return;
-      }
-      if (item.route === "academic-discussion") {
-        clearAcademicProgressTimer();
-        const itemStatus = state.completedPlanItems[Number(el.dataset.planAction)] ? "complete" : item.status;
-        const isDone = itemStatus === "complete";
-        setState({
-          app: "toefl",
-          toeflPage: "academicDiscussion",
-          toolPage: null,
-          academicStage: isDone ? "doneReview" : "draft",
-          academicProgress: 0,
-          academicDraft: getDefaultAcademicDraft(),
-          academicCorrections: isDone ? getCompletedAcademicCorrections() : {},
-          academicAttempts: {},
-          academicSelectedHighlight: "",
-          academicPanelMessage: "",
-          academicReflectionOpen: false,
-          academicReflectionListening: false,
-          academicReflectionFeedback: false,
-          academicNotesPage: 0,
-        });
-      }
+      openPlanItem(item, Number(el.dataset.planAction));
     });
   });
 
@@ -1812,14 +2058,78 @@ function bindEvents() {
       if (form) form.requestSubmit();
     });
   }
+
+  const vocabRequestScore = document.querySelector("#vocabRequestScore");
+  if (vocabRequestScore) {
+    vocabRequestScore.addEventListener("click", handleVocabScoreRequest);
+  }
 }
 
 async function handlePlanSubmit(event) {
   event.preventDefault();
   const input = document.querySelector("#planInput").value.trim();
-  setState({ mascotMood: "thinking", userPlanInput: input });
-  const plan = await mockApi.buildDailyPlan(input);
-  setState({ mascotMood: "smile", plan, completedPlanItems: {} });
+  setState({ mascotMood: "thinking", userPlanInput: input, planLoading: true, planError: "" });
+  try {
+    const plan = await mockApi.buildDailyPlan(input);
+    setState({ mascotMood: "smile", plan, completedPlanItems: {}, planLoading: false, planError: "" });
+  } catch (err) {
+    console.warn("Daily plan API unavailable:", err.message);
+    setState({
+      mascotMood: "smile",
+      plan: normalizeDailyPlan(getDefaultPlan()),
+      completedPlanItems: {},
+      planLoading: false,
+      planError: "AI planning is temporarily unavailable, so Lumi prepared a local TOEFL plan.",
+    });
+  }
+}
+
+function openPlanItem(item, index) {
+  const route = normalizePlanRoute(item.route);
+  if (route === "academic-discussion") {
+    clearAcademicProgressTimer();
+    const itemStatus = state.completedPlanItems[index] ? "complete" : item.status;
+    const isDone = itemStatus === "complete";
+    setState({
+      app: "toefl",
+      toeflPage: "academicDiscussion",
+      toolPage: null,
+      academicStage: isDone ? "doneReview" : "draft",
+      academicProgress: 0,
+      academicDraft: getDefaultAcademicDraft(),
+      academicCorrections: isDone ? getCompletedAcademicCorrections() : {},
+      academicAttempts: {},
+      academicSelectedHighlight: "",
+      academicPanelMessage: "",
+      academicReflectionOpen: false,
+      academicReflectionListening: false,
+      academicReflectionFeedback: false,
+      academicNotesPage: 0,
+    });
+    return;
+  }
+  if (route === "vocab") {
+    setState({
+      app: "toefl",
+      toeflPage: "tool",
+      toolPage: "vocab",
+      selectedVocabDeckIndex: null,
+      vocabSentenceDraft: "",
+      vocabSentenceMessages: [],
+      vocabBatchResult: null,
+      vocabGoodSentenceVisible: false,
+      vocabLoading: false,
+    });
+    return;
+  }
+  const toolRoutes = {
+    speaking: "speaking",
+    listening: "listening",
+    reading: "problems",
+    problems: "problems",
+    mock: "mock",
+  };
+  goToefl("tool", toolRoutes[route] || "problems");
 }
 
 function clearAcademicProgressTimer() {
@@ -1994,18 +2304,87 @@ async function handleVocabSentenceSubmit(event) {
   event.preventDefault();
   const input = document.querySelector("#vocabSentenceInput");
   const sentence = normalizeChatInput(input.value);
-  if (!sentence) return;
-  const current = studyWords[state.currentWordIndex % studyWords.length];
+  if (!sentence || state.vocabLoading) return;
+  const words = getCurrentVocabSet();
   const messages = [...state.vocabSentenceMessages, { role: "user", text: sentence }];
-  if (current.word === "resilient") {
-    const reply = getNextResilientReply(state.vocabSentenceMessages);
-    const nextMessages = reply ? [...messages, { role: "lumi", text: reply }] : messages;
-    setState({ vocabSentenceDraft: "", vocabSentenceMessages: nextMessages });
-    return;
+
+  setState({ vocabSentenceDraft: "", vocabSentenceMessages: messages, vocabLoading: true, vocabBatchResult: null });
+
+  try {
+    const response = await fetch(API_ENDPOINTS.sageVocabBatchChat, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        words: words.map(({ word, meaning }) => ({ word, meaning })),
+        sentence,
+        history: messages,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const reply = data.reply || data.error || "Let me think about that...";
+    const batchResult = {
+      reply,
+      isComplete: Boolean(data.isComplete),
+      missingWords: Array.isArray(data.missingWords) ? data.missingWords : [],
+      weakUsages: Array.isArray(data.weakUsages) ? data.weakUsages : [],
+      suggestedSentence: data.suggestedSentence || getCurrentGoodVocabSentence(),
+    };
+    const completedVocabSets = batchResult.isComplete
+      ? { ...state.completedVocabSets, [getVocabSetKey()]: true }
+      : state.completedVocabSets;
+    setState({
+      vocabSentenceMessages: [...messages, { role: "lumi", text: reply }],
+      vocabBatchResult: batchResult,
+      completedVocabSets,
+      vocabLoading: false,
+    });
+  } catch (err) {
+    console.warn("SAGE API unavailable, using fallback:", err.message);
+    const batchResult = evaluateVocabBatchLocally(words, sentence);
+    const completedVocabSets = batchResult.isComplete
+      ? { ...state.completedVocabSets, [getVocabSetKey()]: true }
+      : state.completedVocabSets;
+    setState({
+      vocabSentenceMessages: [...messages, { role: "lumi", text: batchResult.reply }],
+      vocabBatchResult: batchResult,
+      completedVocabSets,
+      vocabLoading: false,
+    });
   }
-  setState({ vocabSentenceDraft: "", vocabSentenceMessages: messages });
-  const reply = await mockApi.reviewVocabularySentence(current.word, current.meaning, sentence);
-  setState({ vocabSentenceMessages: [...messages, { role: "lumi", text: reply }] });
+}
+
+async function handleVocabScoreRequest() {
+  const current = studyWords[state.currentWordIndex % studyWords.length];
+  const userMessages = state.vocabSentenceMessages.filter((m) => m.role === "user");
+  if (userMessages.length === 0) return;
+  const lastSentence = userMessages[userMessages.length - 1].text;
+
+  setState({ vocabLoading: true });
+
+  try {
+    const response = await fetch(API_ENDPOINTS.sageVocabScore, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        word: current.word,
+        meaning: current.meaning,
+        sentence: lastSentence,
+        history: state.vocabSentenceMessages,
+      }),
+    });
+
+    if (!response.ok) throw new Error(`Score API error: ${response.status}`);
+    const data = await response.json();
+    setState({ vocabScore: data.score, vocabLoading: false });
+  } catch (err) {
+    console.warn("Score API unavailable:", err.message);
+    setState({ vocabLoading: false });
+  }
 }
 
 function escapeHtml(value) {

@@ -1,0 +1,14 @@
+{
+  "name": "lumi-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lumi TOEFL prep app with SAGE-powered vocabulary coaching",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
+  }
+}
